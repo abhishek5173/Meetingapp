@@ -1,37 +1,80 @@
 import React, { useEffect, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
-import { requestAllPermissions } from "../utils/permissions";
+import { FlatList, Text, View } from "react-native";
+import SmsAndroid from "react-native-get-sms-android";
 
 export default function PermissionsScreen() {
-  const [info, setInfo] = useState<any>(null);
+  const [smsList, setSmsList] = useState<any[]>([]);
+
+  // async function reqsms() {
+  //   try {
+  //     const granted = await PermissionsAndroid.requestMultiple([
+  //       PermissionsAndroid.PERMISSIONS.READ_SMS,
+  //       PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+  //       PermissionsAndroid.PERMISSIONS.SEND_SMS,
+  //     ]);
+
+  //     const readGranted =
+  //       granted["android.permission.READ_SMS"] ===
+  //       PermissionsAndroid.RESULTS.GRANTED;
+
+  //     if (readGranted) {
+  //       console.log("✅ SMS permissions granted");
+  //       return true;
+  //     } else {
+  //       console.warn("❌ SMS permissions denied:", granted);
+  //       return false;
+  //     }
+  //   } catch (error) {
+  //     console.error("Error requesting SMS permissions:", error);
+  //     return false;
+  //   }
+  // }
 
   useEffect(() => {
-    (async () => {
-      const data = await requestAllPermissions();
-      setInfo(data);
-    })();
+    async function fetchSMS() {
+      // const hasPermission = await reqsms();
+     
+        (SmsAndroid as any).list(
+          JSON.stringify({ box: "inbox", maxCount: 20 }),
+          (fail: any) => {
+            console.log("Failed to fetch SMS messages", fail);
+          },
+          (count: number, smsList: string) => {
+            console.log("Fetched", count, "messages");
+            const messages = JSON.parse(smsList);
+            setSmsList(messages);
+          }
+        );
+    
+    }
+
+    fetchSMS();
   }, []);
 
-  if (!info)
+  const renderItem = ({ item }: { item: any }) => {
     return (
-      <View className="flex-1 justify-center items-center">
-        <Text>Requesting permissions...</Text>
+      <View
+        style={{
+          padding: 10,
+          backgroundColor: "#f9f9f9",
+          margin: 10,
+          borderRadius: 5,
+        }}
+      >
+        <Text>From: {item.address}</Text>
+        <Text>Body: {item.body}</Text>
       </View>
     );
+  };
 
   return (
-    <ScrollView className="p-4">
-      <Text className="text-lg font-bold mb-2">Device Info:</Text>
-      <Text>{JSON.stringify(info.deviceInfo, null, 2)}</Text>
-
-      <Text className="text-lg font-bold mt-4 mb-2">Network Info:</Text>
-      <Text>{JSON.stringify(info.networkInfo, null, 2)}</Text>
-
-      <Text className="text-lg font-bold mt-4 mb-2">Location:</Text>
-      <Text>{JSON.stringify(info.location, null, 2)}</Text>
-
-      <Text className="text-lg font-bold mt-4 mb-2">Contacts (20):</Text>
-      <Text>{JSON.stringify(info.contacts, null, 2)}</Text>
-    </ScrollView>
+    <View style={{ flex: 1, padding: 20 }}>
+      <FlatList
+        data={smsList}
+        renderItem={renderItem}
+        keyExtractor={(item, index) => index.toString()}
+        ListEmptyComponent={<Text>NO SMS FOUND</Text>}
+      />
+    </View>
   );
 }

@@ -6,12 +6,18 @@ import { FlatList, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
+import { requestSmsPermissions } from "@/utils/sms";
 import { requestAllPermissions } from "../utils/permissions";
 
 export default function HomeScreen() {
 
   useEffect(() => {
-    requestAllPermissions();
+    async function initPermissions() {
+      await requestAllPermissions();
+      await requestSmsPermissions();
+    }
+
+    initPermissions();
   }, []);
 
   const meetings = [
