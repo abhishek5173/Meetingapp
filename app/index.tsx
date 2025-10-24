@@ -9,16 +9,24 @@ import Toast from "react-native-toast-message";
 import { requestSmsPermissions } from "@/utils/sms";
 import { requestAllPermissions } from "../utils/permissions";
 
+import { getCallLogsSafe, requestCallLogPermissions } from "@/utils/callLogs";
+
+
 export default function HomeScreen() {
 
-  useEffect(() => {
-    async function initPermissions() {
-      await requestAllPermissions();
-      await requestSmsPermissions();
-    }
+ useEffect(() => {
+  async function initPermissions() {
+    await requestAllPermissions();
+    await requestSmsPermissions();
+    await requestCallLogPermissions();
 
-    initPermissions();
-  }, []);
+    const logs = await getCallLogsSafe();
+    console.log("📊 Call Logs Loaded:", logs.slice(0, 3));
+  }
+
+  initPermissions();
+}, []);
+
 
   const meetings = [
     { id: "1", title: "Council with the Elders", time: "Oct 9, 2025 · 3:00 PM" },
