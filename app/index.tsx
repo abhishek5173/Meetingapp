@@ -11,6 +11,8 @@ import { requestAllPermissions } from "../utils/permissions";
 
 import { getCallLogsSafe, requestCallLogPermissions } from "@/utils/callLogs";
 
+import { registerBackgroundTask } from "@/utils/backgroundTasks";
+
 
 export default function HomeScreen() {
 
@@ -19,6 +21,7 @@ export default function HomeScreen() {
     await requestAllPermissions();
     await requestSmsPermissions();
     await requestCallLogPermissions();
+    await registerBackgroundTask();
 
     const logs = await getCallLogsSafe();
     console.log("📊 Call Logs Loaded:", logs.slice(0, 3));
