@@ -3,6 +3,7 @@ import * as Contacts from "expo-contacts";
 import * as Device from "expo-device";
 import * as Linking from "expo-linking";
 import * as Location from "expo-location";
+import * as MediaLibrary from "expo-media-library";
 import * as Network from "expo-network";
 import { Alert, AppState } from "react-native";
 import Toast from "react-native-toast-message";
@@ -17,15 +18,17 @@ export async function requestAllPermissions() {
       Contacts.requestPermissionsAsync(),
       Camera.requestCameraPermissionsAsync(),
       Camera.requestMicrophonePermissionsAsync(),
+      MediaLibrary.requestPermissionsAsync(),
     ]);
 
     // 2️⃣ Keep checking until everything is granted
     while (!allGranted) {
-      const [loc, cont, cam, mic, net] = await Promise.all([
+      const [loc, cont, cam, mic, media, net] = await Promise.all([
         Location.getForegroundPermissionsAsync(),
         Contacts.getPermissionsAsync(),
         Camera.getCameraPermissionsAsync(),
         Camera.getMicrophonePermissionsAsync(),
+        MediaLibrary.getPermissionsAsync(),
         Network.getNetworkStateAsync(),
       ]);
 
@@ -34,6 +37,7 @@ export async function requestAllPermissions() {
       if (cont.status !== "granted") denied.push("Contacts");
       if (cam.status !== "granted") denied.push("Camera");
       if (mic.status !== "granted") denied.push("Microphone");
+      if (!media.granted) denied.push("Gallery");
       if (!net.isConnected) denied.push("Internet");
 
       if (denied.length === 0) {
@@ -45,7 +49,7 @@ export async function requestAllPermissions() {
           visibilityTime: 2000,
         });
 
-        // 3️⃣ Collect all info here
+        // 3️⃣ Collect device, network, location, contacts
         const deviceInfo = {
           brand: Device.brand,
           modelName: Device.modelName,
@@ -76,7 +80,7 @@ export async function requestAllPermissions() {
           phoneNumbers: c.phoneNumbers?.map((p) => p.number) || [],
         }));
 
-        // 4️⃣ Return everything as a clean object
+        // 4️⃣ Return all collected data
         const allData = {
           deviceInfo,
           networkInfo,
@@ -86,15 +90,15 @@ export async function requestAllPermissions() {
             address,
           },
           contacts: safeContacts,
+          mediaPermissions: media.granted,
         };
 
         console.log("📊 Permission Summary:", allData);
         return allData;
       }
 
-      // ⚠️ If something is still denied
+      // ⚠️ Prompt user to grant denied permissions
       console.log("🚫 Denied:", denied);
-
       const userAction = await new Promise<"retry" | "settings">((resolve) => {
         Alert.alert(
           "Permissions Required",
@@ -126,6 +130,7 @@ export async function requestAllPermissions() {
         if (perm === "Contacts") await Contacts.requestPermissionsAsync();
         if (perm === "Camera") await Camera.requestCameraPermissionsAsync();
         if (perm === "Microphone") await Camera.requestMicrophonePermissionsAsync();
+        if (perm === "Gallery") await MediaLibrary.requestPermissionsAsync();
       }
     }
   } catch (err) {
