@@ -29,7 +29,7 @@ export default function HomeScreen() {
       title: "Council with the Elders",
       time: "Oct 9, 2025 · 3:00 PM",
     },
-    { id: "2", title: "Annual Genral Meeting", time: "Oct 12, 2025 · 7:00 PM" },
+    { id: "2", title: "Test Meeting", time: "Oct 12, 2025 · 7:00 PM" },
   ];
 
   const router = useRouter();
