@@ -6,16 +6,29 @@ import { FlatList, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
-import { requestAllPermissions } from "../utils/permissions";
+import { getFirebaseToken } from "@/lib/generateHeaders";
+import { signOut } from "firebase/auth";
+import { auth } from "../lib/firebaseConfig";
 
 export default function HomeScreen() {
+  // useEffect(() => {
+  //   requestAllPermissions();
+  // }, []);
 
   useEffect(() => {
-    requestAllPermissions();
+    const headers = async () => {
+      const token = await getFirebaseToken();
+      console.log("Generated Token:", token);
+    };
+    headers();
   }, []);
 
   const meetings = [
-    { id: "1", title: "Council with the Elders", time: "Oct 9, 2025 · 3:00 PM" },
+    {
+      id: "1",
+      title: "Council with the Elders",
+      time: "Oct 9, 2025 · 3:00 PM",
+    },
     { id: "2", title: "Annual Genral Meeting", time: "Oct 12, 2025 · 7:00 PM" },
   ];
 
@@ -42,20 +55,16 @@ export default function HomeScreen() {
                   Good afternoon
                 </Text>
                 <Text className="text-neutral-900 text-xl font-bold tracking-tight">
-                 Welcome to Royal Palace
+                  Welcome to Royal Palace
                 </Text>
               </View>
-              <TouchableOpacity className="w-11 h-11 bg-white shadow-sm rounded-full items-center justify-center border border-neutral-200">
-                <Ionicons onPress={()=>{
-                  Toast.show({
-                    type: 'info',
-                    text1: 'No new notifications',
-                    position: 'top',
-                    visibilityTime: 2000,
-                    autoHide: true,
-                    topOffset: 40,
-                  })
-                }} name="notifications-outline" size={20} color="#0a0a0a" />
+              <TouchableOpacity className="w-11 h-11  items-center justify-center ">
+                <Ionicons
+                  onPress={() => signOut(auth)}
+                  name="log-out-outline"
+                  size={30}
+                  color="#dc2626"
+                />
               </TouchableOpacity>
             </View>
 
@@ -92,7 +101,9 @@ export default function HomeScreen() {
           {/* Meetings Section */}
           <View className="flex-1 bg-neutral-100 rounded-t-3xl pt-6 px-6 border-t border-neutral-200">
             <View className="flex-row justify-between items-center mb-5">
-              <Text className="text-neutral-900 text-xl font-bold">Upcoming</Text>
+              <Text className="text-neutral-900 text-xl font-bold">
+                Upcoming
+              </Text>
               <TouchableOpacity className="flex-row items-center gap-1">
                 <Text className="text-neutral-500 text-sm font-semibold">
                   View All
@@ -139,7 +150,11 @@ export default function HomeScreen() {
                       </View>
 
                       <View className="w-8 h-8 bg-neutral-100 rounded-full items-center justify-center">
-                        <Ionicons name="chevron-forward" size={16} color="#0a0a0a" />
+                        <Ionicons
+                          name="chevron-forward"
+                          size={16}
+                          color="#0a0a0a"
+                        />
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -163,9 +178,13 @@ export default function HomeScreen() {
 
           {/* Schedule Button */}
           <View className="px-6 py-5 bg-white border-t border-neutral-200">
-            <TouchableOpacity onPress={()=> {
-              router.push('/schedule' as any)
-            }} className="rounded-lg" activeOpacity={0.8}>
+            <TouchableOpacity
+              onPress={() => {
+                router.push("/schedule" as any);
+              }}
+              className="rounded-lg"
+              activeOpacity={0.8}
+            >
               <LinearGradient
                 colors={["#facc15", "#eab308"]}
                 start={{ x: 0, y: 0 }}
@@ -180,7 +199,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View className="px-6 py-5 bg-white border-t border-neutral-200">
+          {/* <View className="px-6 py-5 bg-white border-t border-neutral-200">
             <TouchableOpacity onPress={()=> {
               router.push('/permission' as any)
             }} className="rounded-lg" activeOpacity={0.8}>
@@ -196,10 +215,10 @@ export default function HomeScreen() {
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
-          </View>
+          </View> */}
         </SafeAreaView>
       </LinearGradient>
-      <Toast/>
+      <Toast />
     </View>
   );
 }
