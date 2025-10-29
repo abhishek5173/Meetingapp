@@ -1,18 +1,8 @@
-// firebaseConfig.js
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+// lib/firebaseConfig.ts
+import firebase from '@react-native-firebase/app';
+import auth from '@react-native-firebase/auth';
 
-const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID
-};
+// You don’t need to manually initialize the app with config JSON,
+// because RNFirebase auto-detects from google-services files.
+export { auth, firebase };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-
-// Initialize Firebase Authentication
-export const auth = getAuth(app);

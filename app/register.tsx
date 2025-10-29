@@ -1,8 +1,8 @@
 import { useAuth } from "@/lib/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
+import auth from "@react-native-firebase/auth";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,7 +15,7 @@ import {
   View,
 } from "react-native";
 import Toast from "react-native-toast-message";
-import { auth } from "../lib/firebaseConfig";
+
 
 export default function RegisterScreen() {
   const [name, setName] = useState("");
@@ -51,12 +51,8 @@ export default function RegisterScreen() {
 
     try {
       setLoading(true);
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
-      await updateProfile(userCredential.user, { displayName: name });
+      const userCredential = await auth().createUserWithEmailAndPassword(email, password)
+      await userCredential.user.updateProfile({ displayName: name });
       Toast.show({
         type: "success",
         text1: "Account created successfully!",

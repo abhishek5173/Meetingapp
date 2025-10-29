@@ -9,11 +9,15 @@ function RootNavigator() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading) {
-      if (user) router.replace("/"); // logged in → go home
-      else router.replace("/register"); // first-time → register
-    }
-  }, [user, loading]);
+  if (loading) return; // Wait until Firebase finishes checking session
+
+  if (user) {
+    router.replace("/"); // logged in → go home
+  } else {
+    router.replace("/register"); // not logged in → go to register
+  }
+}, [user, loading]);
+
 
   if (loading) {
     return (

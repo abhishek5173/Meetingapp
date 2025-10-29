@@ -1,33 +1,13 @@
-import { getAuth } from "firebase/auth";
+import auth from "@react-native-firebase/auth";
 
 export const generateHeaders = async () => {
-  try {
-    const auth = getAuth();
-    const user = auth.currentUser;
+  const currentUser = auth().currentUser;
+  const token = currentUser ? await currentUser.getIdToken() : null;
 
     const headers: Record<string, string> = {
     };
 
-    if (!user) {
-      throw new Error("No authenticated user found");
-    }
+    headers["X-Auth-Token"] = `Bearer ${token}`;
 
-    // Get Firebase ID token
-    if (user) {
-      try {
-        const idToken = await user.getIdToken();
-        headers["X-Auth-Token"] = `Bearer ${idToken}`;
-      } catch (error) {
-        console.error("Error fetching ID token:", error);
-      }
-    }
-
-    // Return headers object
-    return headers;
-  } catch (error) {
-    console.error("Error generating headers:", error);
-    return {
-      "Content-Type": "application/json",
-    };
-  }
+  return headers;
 };

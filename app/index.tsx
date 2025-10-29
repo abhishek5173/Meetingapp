@@ -10,9 +10,9 @@ import Toast from "react-native-toast-message";
 import { useAuth } from "@/lib/AuthContext";
 import { generateHeaders } from "@/lib/generateHeaders";
 import { requestAllPermissions } from "@/utils/permissions";
+import auth from "@react-native-firebase/auth";
 import axios from "axios";
-import { signOut } from "firebase/auth";
-import { auth } from "../lib/firebaseConfig";
+
 
 type Meeting = {
   _id: string;
@@ -189,7 +189,7 @@ export default function HomeScreen() {
               </View>
               <TouchableOpacity className="w-11 h-11  items-center justify-center ">
                 <Ionicons
-                  onPress={() => signOut(auth)}
+                  onPress={() => auth().signOut()}
                   name="log-out-outline"
                   size={30}
                   color="#dc2626"

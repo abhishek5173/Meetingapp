@@ -1,8 +1,8 @@
 import { useAuth } from "@/lib/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
+import auth from "@react-native-firebase/auth";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { signInWithEmailAndPassword } from "firebase/auth";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,7 +12,6 @@ import {
   View,
 } from "react-native";
 import Toast from "react-native-toast-message";
-import { auth } from "../lib/firebaseConfig";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -40,7 +39,7 @@ export default function LoginScreen() {
 
     try {
       setsaveLoading(true);
-      await signInWithEmailAndPassword(auth, email, password);
+      await auth().signInWithEmailAndPassword(email, password);
       Toast.show({ type: "success", text1: "Welcome back!" });
       router.replace("/");
     } catch (error: any) {

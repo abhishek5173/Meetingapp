@@ -1,10 +1,9 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { User, onAuthStateChanged } from "firebase/auth";
-import React, { ReactNode, createContext, useContext, useEffect, useState } from "react";
-import { auth } from "./firebaseConfig";
+// lib/AuthContext.tsx
+import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
+import React, { createContext, useContext, useEffect, useState } from "react";
 
 type AuthContextType = {
-  user: User | null;
+  user: FirebaseAuthTypes.User | null;
   loading: boolean;
 };
 
@@ -13,22 +12,15 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
 });
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        await AsyncStorage.setItem("user", JSON.stringify(currentUser));
-      } else {
-        setUser(null);
-        await AsyncStorage.removeItem("user");
-      }
+    const unsubscribe = auth().onAuthStateChanged((currentUser) => {
+      setUser(currentUser);
       setLoading(false);
     });
-
     return unsubscribe;
   }, []);
 
