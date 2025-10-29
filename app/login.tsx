@@ -1,14 +1,15 @@
+import { useAuth } from "@/lib/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import React, { useState } from "react";
 import {
-    ActivityIndicator,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import Toast from "react-native-toast-message";
 import { auth } from "../lib/firebaseConfig";
@@ -16,8 +17,14 @@ import { auth } from "../lib/firebaseConfig";
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [saveloading, setsaveLoading] = useState(false);
   const router = useRouter();
+
+  const { user, loading } = useAuth();
+
+  if (user) {
+    router.replace("/");
+  }
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -30,7 +37,7 @@ export default function LoginScreen() {
     }
 
     try {
-      setLoading(true);
+      setsaveLoading(true);
       await signInWithEmailAndPassword(auth, email, password);
       Toast.show({ type: "success", text1: "Welcome back!" });
       router.replace("/");
@@ -45,7 +52,7 @@ export default function LoginScreen() {
 
       Toast.show({ type: "error", text1: message });
     } finally {
-      setLoading(false);
+      setsaveLoading(false);
     }
   };
 
@@ -105,14 +112,14 @@ export default function LoginScreen() {
 
           {/* Login button */}
           <TouchableOpacity
-            disabled={loading}
+            disabled={saveloading}
             onPress={handleLogin}
             activeOpacity={0.8}
             className={`rounded-xl py-3 ${
-              loading ? "bg-yellow-300" : "bg-yellow-400"
+              saveloading ? "bg-yellow-300" : "bg-yellow-400"
             } flex-row justify-center`}
           >
-            {loading ? (
+            {saveloading ? (
               <ActivityIndicator color="#000" />
             ) : (
               <Text className="text-base font-bold text-gray-900">Login</Text>

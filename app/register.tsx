@@ -1,20 +1,21 @@
+import { useAuth } from "@/lib/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import {
-    createUserWithEmailAndPassword,
-    updateProfile,
+  createUserWithEmailAndPassword,
+  updateProfile,
 } from "firebase/auth";
 import React, { useState } from "react";
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import Toast from "react-native-toast-message";
 import { auth } from "../lib/firebaseConfig";
@@ -25,6 +26,12 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  const {user} = useAuth();
+
+  if (user) {
+    router.replace("/");
+  }
 
   const handleRegister = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) {

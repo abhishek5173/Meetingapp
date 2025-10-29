@@ -1,36 +1,161 @@
 import { Ionicons } from "@expo/vector-icons";
+import NetInfo from "@react-native-community/netinfo";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import React, { useEffect } from "react";
-import { FlatList, Text, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Alert, FlatList, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
-import { getFirebaseToken } from "@/lib/generateHeaders";
+import { generateHeaders } from "@/lib/generateHeaders";
+import axios from "axios";
 import { signOut } from "firebase/auth";
 import { auth } from "../lib/firebaseConfig";
+
+type Meeting = {
+  _id: string;
+  title: string;
+  description: string;
+  appointment_taken_at: string;
+  date: string;
+  timestamp: string;
+  firebase_user_id: string;
+};
 
 export default function HomeScreen() {
   // useEffect(() => {
   //   requestAllPermissions();
   // }, []);
 
+  const baseURL = process.env.EXPO_PUBLIC_API_BASE_URL;
+  const FETCH_MEETINGS = `${baseURL}/meeting/get-all-meetings`;
+  const DELETE_MEETING = `${baseURL}/meeting/delete-meeting`;
+
   useEffect(() => {
     const headers = async () => {
-      const token = await getFirebaseToken();
-      console.log("Generated Token:", token);
+      const token = await generateHeaders();
+      console.log("Generated Token:", token["X-Auth-Token"]);
     };
     headers();
   }, []);
 
-  const meetings = [
-    {
-      id: "1",
-      title: "Council with the Elders",
-      time: "Oct 9, 2025 · 3:00 PM",
-    },
-    { id: "2", title: "Test Meeting", time: "Oct 12, 2025 · 7:00 PM" },
-  ];
+  //
+
+  const [meetings, setmeetings] = useState<Meeting[]>([]);
+
+  useEffect(() => {
+  const unsubscribe = NetInfo.addEventListener((state) => {
+    if (!state.isConnected) {
+      Alert.alert(
+        "No Internet Connection",
+        "Please connect to the internet to continue."
+      );
+    }
+  });
+
+  // Optionally check once on mount
+  NetInfo.fetch().then((state) => {
+    if (!state.isConnected) {
+      Alert.alert(
+        "No Internet Connection",
+        "Please connect to the internet to continue."
+      );
+    } else {
+      fetchmeetings(); // Only fetch if online
+    }
+  });
+
+  return () => unsubscribe();
+}, []);
+
+
+  const fetchmeetings = async () => {
+    try {
+      const headers = await generateHeaders();
+      const response = await axios.get(FETCH_MEETINGS, { headers });
+      console.log("Meetings fetched:", response.data);
+      setmeetings(response.data);
+    } catch (error) {
+      console.error("Error fetching meetings:", error);
+    }
+  };
+
+  
+
+  const deleteMeeting = async (meetingId: string) => {
+    try {
+      const headers = await generateHeaders();
+
+      await axios.delete(`${DELETE_MEETING}?meeting_id=${meetingId}`, { headers });
+
+      Toast.show({
+        type: "success",
+        text1: "Meeting deleted successfully!",
+      });
+
+      // Refresh meetings after deletion
+      fetchmeetings();
+    } catch (error) {
+      console.error("Error deleting meeting:", error);
+      Toast.show({
+        type: "error",
+        text1: "Failed to delete meeting",
+        text2: "Please try again later",
+      });
+    }
+  };
+
+  const confirmDelete = (meetingId: string) => {
+    Alert.alert(
+      "Delete Meeting",
+      "Are you sure you want to delete this meeting?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteMeeting(meetingId),
+        },
+      ]
+    );
+  };
+
+  const formatDate = (isoString: string) => {
+    const date = new Date(isoString);
+    return date.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const formatTime = (isoString: string) => {
+    const date = new Date(isoString);
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
+  function countMeetingsThisWeek(meetings: Meeting[]) {
+    // meetings = array of objects like [{ date: "2025-10-28", title: "..." }, ...]
+
+    const today = new Date();
+    const next7 = new Date();
+    next7.setDate(today.getDate() + 7);
+
+    let count = 0;
+
+    meetings.forEach((meeting) => {
+      const meetingDate = new Date(meeting.date);
+
+      // Compare date (ignore time)
+      if (meetingDate >= today && meetingDate <= next7) {
+        count++;
+      }
+    });
+
+    return count;
+  }
+
+  const thisWeekCount = countMeetingsThisWeek(meetings);
 
   const router = useRouter();
 
@@ -86,7 +211,9 @@ export default function HomeScreen() {
 
               <View className="flex-1 bg-white rounded-2xl p-4 border border-neutral-200 shadow-sm">
                 <View className="flex-row items-center justify-between mb-2">
-                  <Text className="text-neutral-900 text-2xl font-bold">2</Text>
+                  <Text className="text-neutral-900 text-2xl font-bold">
+                    {thisWeekCount}
+                  </Text>
                   <View className="bg-yellow-100 rounded-full p-1.5">
                     <Ionicons name="time" size={14} color="#b8860b" />
                   </View>
@@ -104,62 +231,92 @@ export default function HomeScreen() {
               <Text className="text-neutral-900 text-xl font-bold">
                 Upcoming
               </Text>
-              <TouchableOpacity className="flex-row items-center gap-1">
+              {/* <TouchableOpacity className="flex-row items-center gap-1">
                 <Text className="text-neutral-500 text-sm font-semibold">
                   View All
                 </Text>
                 <Ionicons name="chevron-forward" size={16} color="#a3a3a3" />
-              </TouchableOpacity>
+              </TouchableOpacity> */}
             </View>
 
             {meetings.length > 0 ? (
               <FlatList
                 data={meetings}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item) => item._id}
+                showsVerticalScrollIndicator={false}
                 renderItem={({ item }) => (
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    className="bg-white rounded-2xl p-4 mb-3 border border-neutral-200 shadow-sm"
-                  >
-                    <View className="flex-row items-center justify-between">
-                      <View className="flex-row items-center flex-1">
-                        <LinearGradient
-                          colors={["#facc15", "#fde68a"]}
-                          className="w-12 h-12 rounded-xl items-center justify-center mr-4"
-                        >
-                          <Ionicons name="calendar" size={20} color="#0a0a0a" />
-                        </LinearGradient>
+                  <View className="bg-white rounded-2xl p-4 mb-3 border border-neutral-200 shadow-sm">
+                    <View className="flex-row items-start justify-between">
+                      <LinearGradient
+                        colors={["#facc15", "#fde68a"]}
+                        className="w-12 h-12 rounded-xl items-center justify-center mr-4 mt-1"
+                      >
+                        <Ionicons name="calendar" size={22} color="#0a0a0a" />
+                      </LinearGradient>
 
-                        <View className="flex-1">
-                          <Text className="text-neutral-900 text-base font-semibold mb-1.5">
-                            {item.title}
-                          </Text>
-                          <View className="flex-row items-center">
-                            <View className="bg-yellow-50 rounded-full px-2 py-0.5 flex-row items-center">
-                              <Ionicons
-                                name="time-outline"
-                                size={10}
-                                color="#b8860b"
-                              />
-                              <Text className="text-neutral-600 text-xs font-medium ml-1">
-                                {item.time}
-                              </Text>
-                            </View>
+                      <View className="flex-1">
+                        {/* Title */}
+                        <Text className="text-neutral-900 text-base font-semibold mb-1.5">
+                          {item.title}
+                        </Text>
+
+                        {/* Description (one line only) */}
+                        <Text
+                          className="text-neutral-500 text-sm mb-2"
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          {item.description}
+                        </Text>
+
+                        {/* Appointment details */}
+                        <View className="flex-row items-center gap-x-2">
+                          <View className="flex-row items-center bg-yellow-50 rounded-full px-2 py-0.5">
+                            <Ionicons
+                              name="calendar-outline"
+                              size={10}
+                              color="#b8860b"
+                            />
+                            <Text className="text-xs text-neutral-700 ml-1">
+                              Date: {formatDate(item.date)}
+                            </Text>
+                          </View>
+
+                          <View className="flex-row items-center bg-yellow-50 rounded-full px-2 py-0.5">
+                            <Ionicons
+                              name="time-outline"
+                              size={10}
+                              color="#b8860b"
+                            />
+                            <Text className="text-xs text-neutral-700 ml-1">
+                              Taken At: {formatTime(item.appointment_taken_at)}
+                            </Text>
                           </View>
                         </View>
                       </View>
 
-                      <View className="w-8 h-8 bg-neutral-100 rounded-full items-center justify-center">
+                      {/* Right icon */}
+                      <TouchableOpacity
+                        onPress={() => confirmDelete(item._id)}
+                        activeOpacity={0.7}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          backgroundColor: "#fee2e2", // red-100
+                          borderRadius: 9999,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
                         <Ionicons
-                          name="chevron-forward"
+                          name="trash-outline"
                           size={16}
-                          color="#0a0a0a"
+                          color="#dc2626"
                         />
-                      </View>
+                      </TouchableOpacity>
                     </View>
-                  </TouchableOpacity>
+                  </View>
                 )}
-                showsVerticalScrollIndicator={false}
               />
             ) : (
               <View className="flex-1 items-center justify-center py-16">
