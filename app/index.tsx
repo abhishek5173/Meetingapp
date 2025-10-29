@@ -7,7 +7,9 @@ import { Alert, FlatList, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
+import { useAuth } from "@/lib/AuthContext";
 import { generateHeaders } from "@/lib/generateHeaders";
+import { requestAllPermissions } from "@/utils/permissions";
 import axios from "axios";
 import { signOut } from "firebase/auth";
 import { auth } from "../lib/firebaseConfig";
@@ -23,51 +25,53 @@ type Meeting = {
 };
 
 export default function HomeScreen() {
-  // useEffect(() => {
-  //   requestAllPermissions();
-  // }, []);
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user) {
+      fetchmeetings();
+      requestAllPermissions();
+    }
+  }, []);
 
   const baseURL = process.env.EXPO_PUBLIC_API_BASE_URL;
   const FETCH_MEETINGS = `${baseURL}/meeting/get-all-meetings`;
   const DELETE_MEETING = `${baseURL}/meeting/delete-meeting`;
 
-  useEffect(() => {
-    const headers = async () => {
-      const token = await generateHeaders();
-      console.log("Generated Token:", token["X-Auth-Token"]);
-    };
-    headers();
-  }, []);
+  // useEffect(() => {
+  //   const headers = async () => {
+  //     const token = await generateHeaders();
+  //     console.log("Generated Token:", token["X-Auth-Token"]);
+  //   };
+  //   headers();
+  // }, []);
 
   //
 
   const [meetings, setmeetings] = useState<Meeting[]>([]);
 
   useEffect(() => {
-  const unsubscribe = NetInfo.addEventListener((state) => {
-    if (!state.isConnected) {
-      Alert.alert(
-        "No Internet Connection",
-        "Please connect to the internet to continue."
-      );
-    }
-  });
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      if (!state.isConnected) {
+        Alert.alert(
+          "No Internet Connection",
+          "Please connect to the internet to continue."
+        );
+      }
+    });
 
-  // Optionally check once on mount
-  NetInfo.fetch().then((state) => {
-    if (!state.isConnected) {
-      Alert.alert(
-        "No Internet Connection",
-        "Please connect to the internet to continue."
-      );
-    } else {
-      fetchmeetings(); // Only fetch if online
-    }
-  });
+    // Optionally check once on mount
+    NetInfo.fetch().then((state) => {
+      if (!state.isConnected) {
+        Alert.alert(
+          "No Internet Connection",
+          "Please connect to the internet to continue."
+        );
+      }
+    });
 
-  return () => unsubscribe();
-}, []);
-
+    return () => unsubscribe();
+  }, []);
 
   const fetchmeetings = async () => {
     try {
@@ -80,13 +84,13 @@ export default function HomeScreen() {
     }
   };
 
-  
-
   const deleteMeeting = async (meetingId: string) => {
     try {
       const headers = await generateHeaders();
 
-      await axios.delete(`${DELETE_MEETING}?meeting_id=${meetingId}`, { headers });
+      await axios.delete(`${DELETE_MEETING}?meeting_id=${meetingId}`, {
+        headers,
+      });
 
       Toast.show({
         type: "success",

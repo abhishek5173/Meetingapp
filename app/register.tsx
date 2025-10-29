@@ -2,11 +2,8 @@ import { useAuth } from "@/lib/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import {
-  createUserWithEmailAndPassword,
-  updateProfile,
-} from "firebase/auth";
-import React, { useState } from "react";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -27,11 +24,13 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const {user} = useAuth();
+  const { user } = useAuth();
 
-  if (user) {
-    router.replace("/");
-  }
+  useEffect(() => {
+    if (user) {
+      router.replace("/");
+    }
+  }, [user]);
 
   const handleRegister = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) {
@@ -180,7 +179,9 @@ export default function RegisterScreen() {
               className="rounded-2xl overflow-hidden mb-4"
             >
               <LinearGradient
-                colors={loading ? ["#fde68a", "#facc15"] : ["#facc15", "#eab308"]}
+                colors={
+                  loading ? ["#fde68a", "#facc15"] : ["#facc15", "#eab308"]
+                }
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 className="py-3 flex-row items-center justify-center"

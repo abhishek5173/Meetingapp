@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Text,
@@ -22,9 +22,11 @@ export default function LoginScreen() {
 
   const { user, loading } = useAuth();
 
-  if (user) {
+  useEffect(() => {
+    if (user) {
     router.replace("/");
   }
+  }, [user]);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
