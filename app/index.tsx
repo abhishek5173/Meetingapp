@@ -9,7 +9,6 @@ import Toast from "react-native-toast-message";
 
 import { useAuth } from "@/lib/AuthContext";
 import { generateHeaders } from "@/lib/generateHeaders";
-import { requestAllPermissions } from "@/utils/permissions";
 import auth from "@react-native-firebase/auth";
 import axios from "axios";
 
@@ -30,7 +29,7 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!loading && user) {
       fetchmeetings();
-      requestAllPermissions();
+    //  requestAllPermissions();
     }
   }, []);
 
