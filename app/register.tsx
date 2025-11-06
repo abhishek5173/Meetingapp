@@ -1,6 +1,7 @@
 import { useAuth } from "@/lib/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import auth from "@react-native-firebase/auth";
+import firestore from "@react-native-firebase/firestore";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -16,7 +17,6 @@ import {
 } from "react-native";
 import Toast from "react-native-toast-message";
 
-
 export default function RegisterScreen() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -31,6 +31,19 @@ export default function RegisterScreen() {
       router.replace("/");
     }
   }, [user]);
+
+  const createUserProfile = async (user: any, name: string) => {
+    try {
+      await firestore().collection("users").doc(user.uid).set({
+        uid: user.uid,
+        name,
+        email: user.email,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Error creating user profile:", error);
+    }
+  };
 
   const handleRegister = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) {
@@ -51,8 +64,13 @@ export default function RegisterScreen() {
 
     try {
       setLoading(true);
-      const userCredential = await auth().createUserWithEmailAndPassword(email, password)
+      const userCredential = await auth().createUserWithEmailAndPassword(
+        email,
+        password
+      );
+      const user = userCredential.user;
       await userCredential.user.updateProfile({ displayName: name });
+      await createUserProfile(user, name);
       Toast.show({
         type: "success",
         text1: "Account created successfully!",

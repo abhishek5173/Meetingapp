@@ -76,7 +76,7 @@ export default function HomeScreen() {
     try {
       const headers = await generateHeaders();
       const response = await axios.get(FETCH_MEETINGS, { headers });
-      console.log("Meetings fetched:", response.data);
+    //  console.log("Meetings fetched:", response.data);
       setmeetings(response.data);
     } catch (error) {
       console.error("Error fetching meetings:", error);
