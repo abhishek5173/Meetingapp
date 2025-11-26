@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -19,12 +20,12 @@ export default function LoginScreen() {
   const [saveloading, setsaveLoading] = useState(false);
   const router = useRouter();
 
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
 
   useEffect(() => {
     if (user) {
-    router.replace("/");
-  }
+      router.replace("/");
+    }
   }, [user]);
 
   const handleLogin = async () => {
@@ -32,7 +33,7 @@ export default function LoginScreen() {
       Toast.show({ type: "error", text1: "All fields are required" });
       return;
     }
-    if (!email.includes("@") || !email.includes(".")) {
+    if (!email.includes("@")) {
       Toast.show({ type: "error", text1: "Please enter a valid email" });
       return;
     }
@@ -44,12 +45,10 @@ export default function LoginScreen() {
       router.replace("/");
     } catch (error: any) {
       let message = "Login failed. Please try again.";
-      if (error.code === "auth/user-not-found")
-        message = "No user found with this email.";
-      else if (error.code === "auth/wrong-password")
-        message = "Incorrect password.";
-      else if (error.code === "auth/invalid-email")
-        message = "Invalid email address.";
+
+      if (error.code === "auth/user-not-found") message = "No user found.";
+      else if (error.code === "auth/wrong-password") message = "Incorrect password.";
+      else if (error.code === "auth/invalid-email") message = "Invalid email address.";
 
       Toast.show({ type: "error", text1: message });
     } finally {
@@ -59,86 +58,91 @@ export default function LoginScreen() {
 
   return (
     <LinearGradient
-      colors={["#fefce8", "#fafafa"]}
-      className="flex-1 justify-center"
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
+      colors={["#ffffff", "#f9fafb", "#f3f4f6"]}
+      className="flex-1"
     >
-      {/* background glow */}
-      <View className="absolute top-32 left-10 w-64 h-64 bg-yellow-200/40 rounded-full blur-3xl" />
-      <View className="absolute bottom-20 right-0 w-72 h-72 bg-yellow-100/40 rounded-full blur-3xl" />
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      <View className="mx-6 bg-white/90 p-6 rounded-3xl shadow-md border border-neutral-200">
-        
-          <Text className="text-3xl font-extrabold text-center mb-6 text-gray-900">
+      <View className="flex-1 justify-center px-6">
+        {/* CARD */}
+        <View
+          className="bg-white rounded-3xl p-6 border border-gray-200"
+          style={{
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 3 },
+            shadowOpacity: 0.08,
+            shadowRadius: 10,
+            elevation: 4,
+          }}
+        >
+          <Text className="text-gray-900 text-3xl font-bold text-center mb-6">
             Welcome Back
           </Text>
 
-          {/* Email */}
-          <View className="flex-row items-center bg-neutral-50 border border-neutral-300 rounded-xl px-3 mb-3">
-            <Ionicons
-              name="mail-outline"
-              size={18}
-              color="#a3a3a3"
-              style={{ marginRight: 6 }}
-            />
+          {/* EMAIL INPUT */}
+          <View className="flex-row items-center bg-gray-50 border border-gray-300 rounded-2xl px-3 py-3 mb-4">
+            <View className="bg-blue-50 p-2 rounded-xl mr-3">
+              <Ionicons name="mail-outline" size={18} color="#3b82f6" />
+            </View>
+
             <TextInput
-              className="flex-1 py-3 px-1 text-gray-800"
               placeholder="Email Address"
               placeholderTextColor="#9ca3af"
-              keyboardType="email-address"
-              autoCapitalize="none"
               value={email}
               onChangeText={setEmail}
+              className="flex-1 text-gray-800"
+              keyboardType="email-address"
+              autoCapitalize="none"
             />
           </View>
 
-          {/* Password */}
-          <View className="flex-row items-center bg-neutral-50 border border-neutral-300 rounded-xl px-3 mb-5">
-            <Ionicons
-              name="lock-closed-outline"
-              size={18}
-              color="#a3a3a3"
-              style={{ marginRight: 6 }}
-            />
+          {/* PASSWORD INPUT */}
+          <View className="flex-row items-center bg-gray-50 border border-gray-300 rounded-2xl px-3 py-3 mb-5">
+            <View className="bg-emerald-50 p-2 rounded-xl mr-3">
+              <Ionicons name="lock-closed-outline" size={18} color="#10b981" />
+            </View>
+
             <TextInput
-              className="flex-1 py-3 px-1 text-gray-800"
               placeholder="Password"
               placeholderTextColor="#9ca3af"
               secureTextEntry
               value={password}
               onChangeText={setPassword}
+              className="flex-1 text-gray-800"
             />
           </View>
 
-          {/* Login button */}
+          {/* LOGIN BUTTON */}
           <TouchableOpacity
             disabled={saveloading}
             onPress={handleLogin}
-            activeOpacity={0.8}
-            className={`rounded-xl py-3 ${
-              saveloading ? "bg-yellow-300" : "bg-yellow-400"
-            } flex-row justify-center`}
+            activeOpacity={0.9}
+            className="bg-blue-600 rounded-2xl py-4 flex-row justify-center items-center"
+            style={{
+              shadowColor: "#3b82f6",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.28,
+              shadowRadius: 8,
+              elevation: 8,
+            }}
           >
             {saveloading ? (
-              <ActivityIndicator color="#000" />
+              <ActivityIndicator color="#fff" />
             ) : (
-              <Text className="text-base font-bold text-gray-900">Login</Text>
+              <Text className="text-white text-base font-bold">Login</Text>
             )}
           </TouchableOpacity>
 
-          {/* Register link */}
+          {/* REGISTER LINK */}
           <TouchableOpacity
             onPress={() => router.push("/register")}
-            activeOpacity={0.7}
+            className="mt-5"
           >
-            <Text className="text-blue-600 text-center mt-5 font-medium">
+            <Text className="text-blue-600 text-center font-medium">
               Don’t have an account? Register
             </Text>
           </TouchableOpacity>
-        
-
-        {/* Toast container */}
+        </View>
       </View>
 
       <Toast />

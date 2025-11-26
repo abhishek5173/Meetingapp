@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StatusBar,
   Text,
   TextInput,
   TouchableOpacity,
@@ -22,27 +23,21 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   const { user } = useAuth();
+  const router = useRouter();
 
   useEffect(() => {
-    if (user) {
-      router.replace("/");
-    }
+    if (user) router.replace("/");
   }, [user]);
 
   const createUserProfile = async (user: any, name: string) => {
-    try {
-      await firestore().collection("users").doc(user.uid).set({
-        uid: user.uid,
-        name,
-        email: user.email,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-      });
-    } catch (error) {
-      console.error("Error creating user profile:", error);
-    }
+    await firestore().collection("users").doc(user.uid).set({
+      uid: user.uid,
+      name,
+      email: user.email,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+    });
   };
 
   const handleRegister = async () => {
@@ -50,7 +45,7 @@ export default function RegisterScreen() {
       Toast.show({ type: "error", text1: "All fields are required" });
       return;
     }
-    if (!email.includes("@") || !email.includes(".")) {
+    if (!email.includes("@")) {
       Toast.show({ type: "error", text1: "Please enter a valid email" });
       return;
     }
@@ -64,25 +59,17 @@ export default function RegisterScreen() {
 
     try {
       setLoading(true);
-      const userCredential = await auth().createUserWithEmailAndPassword(
-        email,
-        password
-      );
-      const user = userCredential.user;
-      await userCredential.user.updateProfile({ displayName: name });
-      await createUserProfile(user, name);
-      Toast.show({
-        type: "success",
-        text1: "Account created successfully!",
-      });
+      const userCredential = await auth().createUserWithEmailAndPassword(email, password);
+      const createdUser = userCredential.user;
+
+      await createdUser.updateProfile({ displayName: name });
+      await createUserProfile(createdUser, name);
+
+      Toast.show({ type: "success", text1: "Account created successfully!" });
       router.replace("/");
     } catch (error: any) {
       if (error.code === "auth/email-already-in-use") {
-        Toast.show({
-          type: "error",
-          text1: "Email already registered",
-          text2: "Try logging in instead",
-        });
+        Toast.show({ type: "error", text1: "Email already registered" });
       } else {
         Toast.show({
           type: "error",
@@ -97,69 +84,64 @@ export default function RegisterScreen() {
 
   return (
     <LinearGradient
-      colors={["#fefce8", "#fafafa"]}
-      className="flex-1 justify-center"
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
+      colors={["#ffffff", "#f9fafb", "#f3f4f6"]}
+      className="flex-1"
     >
-      {/* background glow */}
-      <View className="absolute top-32 left-10 w-64 h-64 bg-yellow-200/40 rounded-full blur-3xl" />
-      <View className="absolute bottom-20 right-0 w-72 h-72 bg-yellow-100/40 rounded-full blur-3xl" />
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1 justify-center"
+        className="flex-1"
       >
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
+          contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: 24 }}
           keyboardShouldPersistTaps="handled"
         >
-          <View className="mx-6 bg-white/90 p-6 rounded-3xl shadow-md border border-neutral-200">
-            {/* Header */}
+          {/* Card */}
+          <View
+            className="bg-white rounded-3xl p-6 border border-gray-200"
+            style={{
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 3 },
+              shadowOpacity: 0.08,
+              shadowRadius: 10,
+              elevation: 4,
+            }}
+          >
+
+            {/* Header Icon Bubble */}
             <View className="items-center mb-6">
-              <LinearGradient
-                colors={["#facc15", "#fde047"]}
-                className="w-20 h-20 rounded-full items-center justify-center shadow-sm mb-4"
-              >
-                <Ionicons name="person-add" size={28} color="#0a0a0a" />
-              </LinearGradient>
-              <Text className="text-2xl font-extrabold text-gray-900">
-                Create Account
-              </Text>
-              <Text className="text-gray-500 mt-1 text-sm">
-                Join the Royal Palace Community
-              </Text>
+              <View className="bg-blue-50 w-20 h-20 rounded-full items-center justify-center mb-4">
+                <Ionicons name="person-add" size={32} color="#3b82f6" />
+              </View>
+
+              <Text className="text-gray-900 text-3xl font-bold">Create Account</Text>
+              <Text className="text-gray-500 text-sm mt-1">Join the Royal Palace Community</Text>
             </View>
 
             {/* Name */}
-            <View className="flex-row items-center bg-neutral-50 border border-neutral-300 rounded-xl px-3 mb-3">
-              <Ionicons
-                name="person-outline"
-                size={18}
-                color="#a3a3a3"
-                style={{ marginRight: 6 }}
-              />
+            <View className="flex-row items-center bg-gray-50 border border-gray-300 rounded-2xl px-3 py-3 mb-4">
+              <View className="bg-blue-50 p-2 rounded-xl mr-3">
+                <Ionicons name="person-outline" size={18} color="#3b82f6" />
+              </View>
               <TextInput
-                className="flex-1 py-3 px-1 text-gray-800"
                 placeholder="Full Name"
                 placeholderTextColor="#9ca3af"
+                className="flex-1 text-gray-800"
                 value={name}
                 onChangeText={setName}
               />
             </View>
 
             {/* Email */}
-            <View className="flex-row items-center bg-neutral-50 border border-neutral-300 rounded-xl px-3 mb-3">
-              <Ionicons
-                name="mail-outline"
-                size={18}
-                color="#a3a3a3"
-                style={{ marginRight: 6 }}
-              />
+            <View className="flex-row items-center bg-gray-50 border border-gray-300 rounded-2xl px-3 py-3 mb-4">
+              <View className="bg-blue-50 p-2 rounded-xl mr-3">
+                <Ionicons name="mail-outline" size={18} color="#3b82f6" />
+              </View>
               <TextInput
-                className="flex-1 py-3 px-1 text-gray-800"
                 placeholder="Email Address"
                 placeholderTextColor="#9ca3af"
+                className="flex-1 text-gray-800"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={email}
@@ -168,17 +150,14 @@ export default function RegisterScreen() {
             </View>
 
             {/* Password */}
-            <View className="flex-row items-center bg-neutral-50 border border-neutral-300 rounded-xl px-3 mb-5">
-              <Ionicons
-                name="lock-closed-outline"
-                size={18}
-                color="#a3a3a3"
-                style={{ marginRight: 6 }}
-              />
+            <View className="flex-row items-center bg-gray-50 border border-gray-300 rounded-2xl px-3 py-3 mb-6">
+              <View className="bg-emerald-50 p-2 rounded-xl mr-3">
+                <Ionicons name="lock-closed-outline" size={18} color="#10b981" />
+              </View>
               <TextInput
-                className="flex-1 py-3 px-1 text-gray-800"
                 placeholder="Password"
                 placeholderTextColor="#9ca3af"
+                className="flex-1 text-gray-800"
                 secureTextEntry
                 value={password}
                 onChangeText={setPassword}
@@ -189,39 +168,33 @@ export default function RegisterScreen() {
             <TouchableOpacity
               disabled={loading}
               onPress={handleRegister}
-              activeOpacity={0.8}
-              className="rounded-2xl overflow-hidden mb-4"
+              activeOpacity={0.9}
+              className="bg-blue-600 rounded-2xl py-4 flex-row justify-center items-center"
+              style={{
+                shadowColor: "#3b82f6",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.28,
+                shadowRadius: 8,
+                elevation: 8,
+              }}
             >
-              <LinearGradient
-                colors={
-                  loading ? ["#fde68a", "#facc15"] : ["#facc15", "#eab308"]
-                }
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="py-3 flex-row items-center justify-center"
-              >
-                {loading ? (
-                  <ActivityIndicator color="#000" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark-circle" size={18} color="#000" />
-                    <Text className="text-gray-900 font-bold text-base ml-2">
-                      Register
-                    </Text>
-                  </>
-                )}
-              </LinearGradient>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
+                  <Text className="text-white text-base font-bold ml-2">Register</Text>
+                </>
+              )}
             </TouchableOpacity>
 
-            {/* Login Link */}
+            {/* Login Redirect */}
             <TouchableOpacity
               onPress={() => router.push("/login")}
-              activeOpacity={0.7}
-              className="items-center"
+              className="mt-5"
             >
-              <Text className="text-blue-600 text-center text-sm font-medium">
-                Already have an account?{" "}
-                <Text className="font-semibold underline">Login</Text>
+              <Text className="text-blue-600 text-center font-medium">
+                Already have an account? Login
               </Text>
             </TouchableOpacity>
           </View>
