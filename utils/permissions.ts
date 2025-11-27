@@ -51,22 +51,35 @@ async function showRetryAlert(title: string, denied: string[]) {
 /* ----------------------------- LOCATION ----------------------------- */
 export async function requestAndFetchLocation() {
   let granted = false;
+
   while (!granted) {
     const { status } = await Location.requestForegroundPermissionsAsync();
     granted = status === "granted";
 
     if (!granted) {
       const action = await showRetryAlert("Location Permission Required", ["Location"]);
+      
       if (action === "settings") {
         await Linking.openSettings();
         await waitForAppReturn();
+        
+        // 🔥 IMPORTANT: REFRESH PERMISSIONS AFTER RETURNING
+        const refreshed = await Location.getForegroundPermissionsAsync();
+        granted = refreshed.status === "granted";
+        if (granted) break;
       }
+
       continue;
     }
   }
 
-  const location = await Location.getCurrentPositionAsync({});
+  // NOW SAFE TO FETCH LOCATION
+  const location = await Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.High,
+  });
+
   const geocode = await Location.reverseGeocodeAsync(location.coords);
+
   const address =
     geocode.length > 0
       ? `${geocode[0].name}, ${geocode[0].street}, ${geocode[0].city}, ${geocode[0].region}, ${geocode[0].country}`
@@ -78,6 +91,7 @@ export async function requestAndFetchLocation() {
     address,
   };
 }
+
 
 /* ----------------------------- CONTACTS ----------------------------- */
 export async function requestAndFetchContacts() {
