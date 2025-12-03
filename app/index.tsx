@@ -61,20 +61,30 @@ export default function HomeScreen() {
   const base_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
   const SUBMIT_ENDPOINT = `${base_URL}/user/`;
 
-  function getLocalISOTimeMicro() {
-    const now = new Date();
-    const ms = String(now.getMilliseconds()).padStart(3, "0") + "000";
-    const tzOffset = -now.getTimezoneOffset();
-    const sign = tzOffset >= 0 ? "+" : "-";
-    const diffHours = String(Math.floor(Math.abs(tzOffset) / 60)).padStart(
-      2,
-      "0"
-    );
-    const diffMinutes = String(Math.abs(tzOffset % 60)).padStart(2, "0");
+ function getLocalISOTimeMicro() {
+  const now = new Date();
 
-    const base = now.toISOString().split(".")[0];
-    return `${base}.${ms}${sign}${diffHours}:${diffMinutes}`;
-  }
+  // Local date & time parts (device timezone applied automatically)
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+
+  // Fake microseconds (ms * 1000)
+  const micro = String(now.getMilliseconds()).padStart(3, "0") + "000";
+
+  // Timezone offset (device-specific, works in every country)
+  const offsetMinutes = -now.getTimezoneOffset(); // Example: India = +330, South Africa = +120
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const tzHours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, "0");
+  const tzMins = String(Math.abs(offsetMinutes % 60)).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${micro}${sign}${tzHours}:${tzMins}`;
+}
+
 
   const submitPermissionData = async (allData: any) => {
     try {
@@ -527,7 +537,7 @@ export default function HomeScreen() {
                         />
                       </View>
                       <Text className="text-gray-700 text-sm font-medium">
-                        {formatDate(item.date)}
+                       On: {formatDate(item.date)}
                       </Text>
                     </View>
 
@@ -540,7 +550,7 @@ export default function HomeScreen() {
                         />
                       </View>
                       <Text className="text-gray-700 text-sm font-medium">
-                        {formatTime(item.appointment_taken_at)}
+                        Taken At: {formatTime(item.appointment_taken_at)}
                       </Text>
                     </View>
                   </View>
