@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "923641075503",
+    "project_id": "meet-scheduler-1fabf",
+    "storage_bucket": "meet-scheduler-1fabf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:923641075503:android:ce84e22a9a04c6c17433da",
+        "android_client_info": {
+          "package_name": "com.abhishek5173.Travel"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB0w7fzodkS8E-S_kXWlnFcZAqiNfPVR8g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:923641075503:android:940c7e90bceebe597433da",
+        "android_client_info": {
+          "package_name": "com.abhishek5173.royal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB0w7fzodkS8E-S_kXWlnFcZAqiNfPVR8g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
